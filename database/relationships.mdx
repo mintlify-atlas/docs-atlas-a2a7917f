@@ -7,23 +7,31 @@ description: 'Foreign key relationships, joins, and data integrity in the databa
 
 The `asistencia_practicantes` database uses foreign key constraints to maintain referential integrity between tables. This page documents all relationships and provides practical examples of how to query related data.
 
-## Entity Relationship Diagram
+<Warning>
+**Schema vs. Implementation**: The `bd.sql` file shows `asistencia → practicantes` relationship, but the **actual application code** uses `asistencia → usuarios`. All interns are stored in the `usuarios` table with `rol_id = 3`, not in the separate `practicantes` table.
+
+This documentation reflects the **actual implementation**.
+</Warning>
+
+## Entity Relationship Diagram (Actual Implementation)
 
 ```mermaid
 erDiagram
-    practicantes ||--o{ asistencia : "has attendance records"
+    usuarios ||--o{ asistencia : "has attendance records"
     roles ||--o{ usuarios : "assigned to users"
     
-    practicantes {
+    usuarios {
         int id PK
         varchar nombre
         varchar correo UK
-        date fecha_ingreso
+        varchar password_hash
+        int rol_id FK
+        timestamp fecha_registro
     }
     
     asistencia {
         int id PK
-        int practicante_id FK
+        int usuario_id FK
         date fecha
         time hora_entrada
         time hora_salida
@@ -34,90 +42,95 @@ erDiagram
         varchar nombre UK
     }
     
-    usuarios {
-        int id PK
+    practicantes {
+        int id PK "UNUSED TABLE"
         varchar nombre
         varchar correo UK
-        varchar password_hash
-        int rol_id FK
-        timestamp fecha_registro
+        date fecha_ingreso
     }
 ```
+
+<Note>
+The `practicantes` table exists in the schema but is **not used** in the application. All intern data is stored in `usuarios`.
+</Note>
 
 ---
 
 ## Foreign Key Relationships
 
-### 1. asistencia → practicantes
+### 1. asistencia → usuarios (Actual Implementation)
 
-Attendance records are linked to interns through a **many-to-one** relationship.
+Attendance records are linked to users (interns) through a **many-to-one** relationship.
 
 <AccordionGroup>
   <Accordion title="Relationship Details">
     - **Child Table**: `asistencia`
-    - **Parent Table**: `practicantes`
-    - **Foreign Key Column**: `practicante_id`
-    - **References**: `practicantes(id)`
-    - **Cardinality**: Many-to-One (multiple attendance records per intern)
+    - **Parent Table**: `usuarios`
+    - **Foreign Key Column**: `usuario_id`
+    - **References**: `usuarios(id)`
+    - **Cardinality**: Many-to-One (multiple attendance records per user/intern)
+    - **Filter**: Interns have `rol_id = 3` in the `usuarios` table
   </Accordion>
   
-  <Accordion title="Schema Definition">
+  <Accordion title="Schema Definition (Actual)">
     ```sql
     CREATE TABLE asistencia (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        practicante_id INT NOT NULL,
+        usuario_id INT NOT NULL,
         fecha DATE NOT NULL,
         hora_entrada TIME NOT NULL,
         hora_salida TIME NULL,
-        FOREIGN KEY (practicante_id) REFERENCES practicantes(id)
+        FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
     );
     ```
+    
+    **Note**: The `bd.sql` file incorrectly shows `practicante_id` instead of `usuario_id`.
   </Accordion>
   
   <Accordion title="Referential Integrity Rules">
-    **INSERT**: Cannot create attendance record for non-existent intern
+    **INSERT**: Cannot create attendance record for non-existent user
     ```sql
-    -- This will FAIL if practicante_id = 999 doesn't exist
-    INSERT INTO asistencia (practicante_id, fecha, hora_entrada)
+    -- This will FAIL if usuario_id = 999 doesn't exist
+    INSERT INTO asistencia (usuario_id, fecha, hora_entrada)
     VALUES (999, '2024-03-05', '09:00:00');
     ```
     
-    **DELETE**: Cannot delete intern with existing attendance records
+    **DELETE**: Cannot delete user with existing attendance records
     ```sql
-    -- This will FAIL if intern has attendance records
-    DELETE FROM practicantes WHERE id = 1;
+    -- This will FAIL if user has attendance records
+    DELETE FROM usuarios WHERE id = 1;
     ```
     
-    **UPDATE**: Cannot change intern ID to non-existent value
+    **UPDATE**: Cannot change user ID to non-existent value
     ```sql
-    -- This will FAIL if new practicante_id doesn't exist
-    UPDATE asistencia SET practicante_id = 999 WHERE id = 1;
+    -- This will FAIL if new usuario_id doesn't exist
+    UPDATE asistencia SET usuario_id = 999 WHERE id = 1;
     ```
   </Accordion>
 </AccordionGroup>
 
-#### Join Examples
+#### Join Examples (Actual Implementation)
 
 <CodeGroup>
 ```sql Inner Join
 -- Get attendance records with intern names
 SELECT 
-    p.nombre,
-    p.correo,
+    u.nombre,
+    u.correo,
     a.fecha,
     a.hora_entrada,
     a.hora_salida
 FROM asistencia a
-INNER JOIN practicantes p ON a.practicante_id = p.id
-WHERE a.fecha = '2024-03-05'
+INNER JOIN usuarios u ON a.usuario_id = u.id
+WHERE a.fecha = '2024-03-05' AND u.rol_id = 3
 ORDER BY a.hora_entrada;
 ```
 
 ```sql Left Join
 -- Get all interns and their attendance today (including those absent)
 SELECT 
-    p.nombre,
-    p.correo,
+    u.nombre,
+    u.correo,
     a.hora_entrada,
     a.hora_salida,
     CASE 
@@ -125,44 +138,46 @@ SELECT
         WHEN a.hora_salida IS NULL THEN 'Present'
         ELSE 'Completed'
     END as status
-FROM practicantes p
-LEFT JOIN asistencia a ON p.id = a.practicante_id 
+FROM usuarios u
+LEFT JOIN asistencia a ON u.id = a.usuario_id 
     AND a.fecha = CURDATE()
-ORDER BY p.nombre;
+WHERE u.rol_id = 3
+ORDER BY u.nombre;
 ```
 
 ```sql Aggregate Query
 -- Count attendance records per intern
 SELECT 
-    p.nombre,
+    u.nombre,
     COUNT(a.id) as total_dias,
     MIN(a.fecha) as primera_asistencia,
     MAX(a.fecha) as ultima_asistencia
-FROM practicantes p
-LEFT JOIN asistencia a ON p.id = a.practicante_id
-GROUP BY p.id, p.nombre
+FROM usuarios u
+LEFT JOIN asistencia a ON u.id = a.usuario_id
+WHERE u.rol_id = 3
+GROUP BY u.id, u.nombre
 ORDER BY total_dias DESC;
 ```
 
 ```sql Complex Query
 -- Get average daily hours worked per intern
 SELECT 
-    p.nombre,
+    u.nombre,
     COUNT(a.id) as dias_trabajados,
     AVG(
         TIMESTAMPDIFF(MINUTE, a.hora_entrada, a.hora_salida)
     ) / 60 as horas_promedio_diarias
-FROM practicantes p
-INNER JOIN asistencia a ON p.id = a.practicante_id
-WHERE a.hora_salida IS NOT NULL
-GROUP BY p.id, p.nombre
+FROM usuarios u
+INNER JOIN asistencia a ON u.id = a.usuario_id
+WHERE a.hora_salida IS NOT NULL AND u.rol_id = 3
+GROUP BY u.id, u.nombre
 HAVING dias_trabajados > 0
 ORDER BY horas_promedio_diarias DESC;
 ```
 </CodeGroup>
 
 <Note>
-The foreign key constraint ensures that every attendance record is always linked to a valid intern, preventing orphaned records.
+The foreign key constraint ensures that every attendance record is always linked to a valid user (intern), preventing orphaned records. All queries filter by `rol_id = 3` to select only interns.
 </Note>
 
 ---
@@ -288,22 +303,22 @@ The `rol_id` field is nullable, allowing user accounts to be created before role
 
 ## Common Query Patterns
 
-### Finding Related Records
+### Finding Related Records (Actual Implementation)
 
 <AccordionGroup>
   <Accordion title="Get Intern with All Attendance Records">
     ```sql
     SELECT 
-        p.nombre,
-        p.correo,
-        p.fecha_ingreso,
+        u.nombre,
+        u.correo,
+        u.fecha_registro,
         a.fecha,
         a.hora_entrada,
         a.hora_salida,
         TIMEDIFF(a.hora_salida, a.hora_entrada) as tiempo_trabajado
-    FROM practicantes p
-    LEFT JOIN asistencia a ON p.id = a.practicante_id
-    WHERE p.id = 1
+    FROM usuarios u
+    LEFT JOIN asistencia a ON u.id = a.usuario_id
+    WHERE u.id = 1 AND u.rol_id = 3
     ORDER BY a.fecha DESC;
     ```
     
@@ -329,14 +344,14 @@ The `rol_id` field is nullable, allowing user accounts to be created before role
   <Accordion title="Find Interns with No Attendance Today">
     ```sql
     SELECT 
-        p.id,
-        p.nombre,
-        p.correo
-    FROM practicantes p
-    LEFT JOIN asistencia a ON p.id = a.practicante_id 
+        u.id,
+        u.nombre,
+        u.correo
+    FROM usuarios u
+    LEFT JOIN asistencia a ON u.id = a.usuario_id 
         AND a.fecha = CURDATE()
-    WHERE a.id IS NULL
-    ORDER BY p.nombre;
+    WHERE u.rol_id = 3 AND a.id IS NULL
+    ORDER BY u.nombre;
     ```
     
     **Use Case**: Identify absent interns for follow-up
@@ -345,13 +360,14 @@ The `rol_id` field is nullable, allowing user accounts to be created before role
   <Accordion title="Get Interns Currently Present">
     ```sql
     SELECT 
-        p.nombre,
+        u.nombre,
         a.hora_entrada,
         TIMEDIFF(CURTIME(), a.hora_entrada) as tiempo_presente
     FROM asistencia a
-    INNER JOIN practicantes p ON a.practicante_id = p.id
+    INNER JOIN usuarios u ON a.usuario_id = u.id
     WHERE a.fecha = CURDATE() 
         AND a.hora_salida IS NULL
+        AND u.rol_id = 3
     ORDER BY a.hora_entrada;
     ```
     
@@ -359,23 +375,24 @@ The `rol_id` field is nullable, allowing user accounts to be created before role
   </Accordion>
 </AccordionGroup>
 
-### Statistical Queries
+### Statistical Queries (Actual Implementation)
 
 <AccordionGroup>
   <Accordion title="Attendance Rate by Intern">
     ```sql
     SELECT 
-        p.nombre,
+        u.nombre,
         COUNT(DISTINCT a.fecha) as dias_asistidos,
-        DATEDIFF(CURDATE(), p.fecha_ingreso) as dias_desde_ingreso,
+        DATEDIFF(CURDATE(), u.fecha_registro) as dias_desde_registro,
         ROUND(
             (COUNT(DISTINCT a.fecha) * 100.0) / 
-            NULLIF(DATEDIFF(CURDATE(), p.fecha_ingreso), 0), 
+            NULLIF(DATEDIFF(CURDATE(), u.fecha_registro), 0), 
             2
         ) as porcentaje_asistencia
-    FROM practicantes p
-    LEFT JOIN asistencia a ON p.id = a.practicante_id
-    GROUP BY p.id, p.nombre, p.fecha_ingreso
+    FROM usuarios u
+    LEFT JOIN asistencia a ON u.id = a.usuario_id
+    WHERE u.rol_id = 3
+    GROUP BY u.id, u.nombre, u.fecha_registro
     ORDER BY porcentaje_asistencia DESC;
     ```
     
@@ -385,14 +402,14 @@ The `rol_id` field is nullable, allowing user accounts to be created before role
   <Accordion title="Average Entry/Exit Times by Intern">
     ```sql
     SELECT 
-        p.nombre,
+        u.nombre,
         COUNT(a.id) as total_registros,
         SEC_TO_TIME(AVG(TIME_TO_SEC(a.hora_entrada))) as hora_entrada_promedio,
         SEC_TO_TIME(AVG(TIME_TO_SEC(a.hora_salida))) as hora_salida_promedio
-    FROM practicantes p
-    INNER JOIN asistencia a ON p.id = a.practicante_id
-    WHERE a.hora_salida IS NOT NULL
-    GROUP BY p.id, p.nombre
+    FROM usuarios u
+    INNER JOIN asistencia a ON u.id = a.usuario_id
+    WHERE a.hora_salida IS NOT NULL AND u.rol_id = 3
+    GROUP BY u.id, u.nombre
     HAVING total_registros >= 5
     ORDER BY hora_entrada_promedio;
     ```
@@ -403,16 +420,16 @@ The `rol_id` field is nullable, allowing user accounts to be created before role
   <Accordion title="Monthly Attendance Summary">
     ```sql
     SELECT 
-        p.nombre,
+        u.nombre,
         DATE_FORMAT(a.fecha, '%Y-%m') as mes,
         COUNT(a.id) as dias_trabajados,
         SUM(
             TIMESTAMPDIFF(MINUTE, a.hora_entrada, a.hora_salida)
         ) / 60.0 as horas_totales
-    FROM practicantes p
-    INNER JOIN asistencia a ON p.id = a.practicante_id
-    WHERE a.hora_salida IS NOT NULL
-    GROUP BY p.id, p.nombre, DATE_FORMAT(a.fecha, '%Y-%m')
+    FROM usuarios u
+    INNER JOIN asistencia a ON u.id = a.usuario_id
+    WHERE a.hora_salida IS NOT NULL AND u.rol_id = 3
+    GROUP BY u.id, u.nombre, DATE_FORMAT(a.fecha, '%Y-%m')
     ORDER BY mes DESC, horas_totales DESC;
     ```
     
@@ -430,15 +447,15 @@ The `rol_id` field is nullable, allowing user accounts to be created before role
 **Current Behavior**: The schema does NOT define CASCADE rules for foreign keys.
 
 This means:
-- Deleting a `practicante` will FAIL if they have attendance records
+- Deleting a `usuario` (intern) will FAIL if they have attendance records
 - Deleting a `role` will FAIL if it's assigned to any users
 
 To delete parent records, you must first delete or update child records:
 
 ```sql
--- To delete an intern, first delete their attendance
-DELETE FROM asistencia WHERE practicante_id = 1;
-DELETE FROM practicantes WHERE id = 1;
+-- To delete an intern (user), first delete their attendance
+DELETE FROM asistencia WHERE usuario_id = 1;
+DELETE FROM usuarios WHERE id = 1;
 
 -- To delete a role, first reassign or delete users
 UPDATE usuarios SET rol_id = NULL WHERE rol_id = 2;
@@ -455,11 +472,11 @@ If you want automatic deletion of related records, you can modify the foreign ke
 ALTER TABLE asistencia 
 DROP FOREIGN KEY asistencia_ibfk_1;
 
--- Add foreign key with CASCADE
+-- Add foreign key with CASCADE (actual implementation uses usuario_id)
 ALTER TABLE asistencia
-ADD CONSTRAINT fk_asistencia_practicante
-FOREIGN KEY (practicante_id) 
-REFERENCES practicantes(id)
+ADD CONSTRAINT fk_asistencia_usuario
+FOREIGN KEY (usuario_id) 
+REFERENCES usuarios(id)
 ON DELETE CASCADE
 ON UPDATE CASCADE;
 ```
@@ -474,7 +491,7 @@ The foreign key constraints automatically prevent orphaned records:
 
 <CardGroup cols={2}>
   <Card title="Attendance Protection" icon="shield-check">
-    Cannot create attendance records for non-existent interns
+    Cannot create attendance records for non-existent users (interns)
   </Card>
   
   <Card title="Role Protection" icon="shield-check">
@@ -486,48 +503,47 @@ The foreign key constraints automatically prevent orphaned records:
 
 ## Advanced Relationship Queries
 
-### Multi-Table Joins
+### Multi-Table Joins (Actual Implementation)
 
 ```sql
--- Complex query: Get attendance with intern and supervisor info
--- (Assuming there's a supervisor_id in practicantes - not in current schema)
--- This example shows potential extensions
-
+-- Complex query: Get attendance with intern info and their role
 SELECT 
-    p.nombre as practicante,
+    u.nombre as practicante,
+    r.nombre as rol,
     a.fecha,
     a.hora_entrada,
     a.hora_salida,
-    u.nombre as usuario_registrador,
-    r.nombre as rol_usuario
+    u.correo,
+    u.fecha_registro
 FROM asistencia a
-INNER JOIN practicantes p ON a.practicante_id = p.id
-LEFT JOIN usuarios u ON u.correo = p.correo  -- Assuming email match
+INNER JOIN usuarios u ON a.usuario_id = u.id
 LEFT JOIN roles r ON u.rol_id = r.id
 WHERE a.fecha BETWEEN '2024-03-01' AND '2024-03-31'
-ORDER BY a.fecha DESC, p.nombre;
+    AND u.rol_id = 3
+ORDER BY a.fecha DESC, u.nombre;
 ```
 
-### Subqueries with Relationships
+### Subqueries with Relationships (Actual Implementation)
 
 ```sql
 -- Find interns with above-average attendance
 WITH attendance_counts AS (
     SELECT 
-        practicante_id,
+        usuario_id,
         COUNT(*) as dias_asistidos
     FROM asistencia
-    GROUP BY practicante_id
+    GROUP BY usuario_id
 )
 SELECT 
-    p.nombre,
-    p.correo,
+    u.nombre,
+    u.correo,
     ac.dias_asistidos
-FROM practicantes p
-INNER JOIN attendance_counts ac ON p.id = ac.practicante_id
+FROM usuarios u
+INNER JOIN attendance_counts ac ON u.id = ac.usuario_id
 WHERE ac.dias_asistidos > (
     SELECT AVG(dias_asistidos) FROM attendance_counts
 )
+AND u.rol_id = 3
 ORDER BY ac.dias_asistidos DESC;
 ```
 
@@ -539,7 +555,7 @@ ORDER BY ac.dias_asistidos DESC;
 
 MySQL automatically creates indexes on foreign key columns, which optimizes JOIN operations:
 
-- `asistencia.practicante_id` - Indexed for fast lookups
+- `asistencia.usuario_id` - Indexed for fast lookups (actual implementation)
 - `usuarios.rol_id` - Indexed for fast role-based queries
 
 ### Query Optimization Tips
@@ -567,9 +583,9 @@ MySQL automatically creates indexes on foreign key columns, which optimizes JOIN
     CREATE INDEX idx_asistencia_fecha 
     ON asistencia(fecha);
     
-    -- Optimize queries filtering by intern and date
-    CREATE INDEX idx_asistencia_practicante_fecha 
-    ON asistencia(practicante_id, fecha);
+    -- Optimize queries filtering by user and date (actual implementation)
+    CREATE INDEX idx_asistencia_usuario_fecha 
+    ON asistencia(usuario_id, fecha);
     
     -- Optimize role-based user queries
     CREATE INDEX idx_usuarios_rol 
@@ -581,20 +597,21 @@ MySQL automatically creates indexes on foreign key columns, which optimizes JOIN
     **Bad**: Separate query for each intern
     ```sql
     -- Query 1: Get all interns
-    SELECT * FROM practicantes;
+    SELECT * FROM usuarios WHERE rol_id = 3;
     
     -- Query 2-N: Get attendance for each intern (in loop)
-    SELECT * FROM asistencia WHERE practicante_id = ?;
+    SELECT * FROM asistencia WHERE usuario_id = ?;
     ```
     
-    **Good**: Single JOIN query
+    **Good**: Single JOIN query (actual implementation)
     ```sql
     SELECT 
-        p.*,
+        u.*,
         a.*
-    FROM practicantes p
-    LEFT JOIN asistencia a ON p.id = a.practicante_id
-    ORDER BY p.id, a.fecha DESC;
+    FROM usuarios u
+    LEFT JOIN asistencia a ON u.id = a.usuario_id
+    WHERE u.rol_id = 3
+    ORDER BY u.id, a.fecha DESC;
     ```
   </Accordion>
 </AccordionGroup>
@@ -607,9 +624,9 @@ The database implements a clean relational structure with two primary relationsh
 
 <CardGroup cols={2}>
   <Card title="Attendance Tracking" icon="link">
-    **asistencia → practicantes**
+    **asistencia → usuarios** (Actual Implementation)
     
-    Many-to-one relationship linking attendance records to interns
+    Many-to-one relationship linking attendance records to users/interns
   </Card>
   
   <Card title="User Authorization" icon="link">
@@ -626,6 +643,12 @@ The database implements a clean relational structure with two primary relationsh
 - Indexes on foreign keys optimize query performance
 - No CASCADE rules means explicit deletion management
 - Both relationships follow many-to-one patterns
+- **Actual implementation uses `usuario_id` in asistencia table, not `practicante_id`**
+- All interns are stored in `usuarios` table with `rol_id = 3`
+
+<Warning>
+**Critical Note**: The `bd.sql` schema file shows `asistencia.practicante_id` referencing `practicantes(id)`, but the actual PHP code uses `asistencia.usuario_id` referencing `usuarios(id)`. Always use `usuario_id` when writing queries.
+</Warning>
 
 <Card title="View Table Details" icon="table" href="./tables">
   Explore detailed schema for each table

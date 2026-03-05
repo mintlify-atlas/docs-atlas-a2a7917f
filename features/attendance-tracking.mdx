@@ -15,16 +15,16 @@ The attendance system uses the `asistencia` table:
 ```sql
 CREATE TABLE asistencia (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    practicante_id INT NOT NULL,
+    usuario_id INT NOT NULL,
     fecha DATE NOT NULL,
     hora_entrada TIME NOT NULL,
     hora_salida TIME NULL,
-    FOREIGN KEY (practicante_id) REFERENCES practicantes(id)
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
 );
 ```
 
 <Note>
-  The schema references `practicante_id`, but the implementation actually uses `usuario_id` to link directly to the usuarios table. This allows any user with role "practicante" to track attendance.
+  All interns (practicantes) are stored in the `usuarios` table with `rol_id = 3`. The attendance table links directly to `usuarios` using `usuario_id` as the foreign key.
 </Note>
 
 ## Attendance Recording
@@ -332,7 +332,9 @@ echo "<h5 class='card-title'>" . $row['total'] . " Registros</h5>";
   <Card title="Practicantes Activos" icon="users">
     ```php
     $result = $conn->query(
-        "SELECT COUNT(*) as total FROM practicantes"
+        "SELECT COUNT(*) as total 
+         FROM usuarios 
+         WHERE rol_id = 3"
     );
     ```
   </Card>

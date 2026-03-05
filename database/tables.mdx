@@ -11,6 +11,12 @@ This page provides comprehensive documentation for all tables in the `asistencia
 
 ## practicantes
 
+<Warning>
+**Table Defined But Not Used**: The `practicantes` table exists in the `bd.sql` schema file but is **NOT USED** in the actual application code. All intern data is stored in the `usuarios` table with `rol_id = 3` (practicante role).
+
+See the `usuarios` table and `asistencia` table documentation for the actual implementation.
+</Warning>
+
 Stores information about municipal interns (practicantes) enrolled in the attendance tracking system.
 
 ### Schema
@@ -71,7 +77,7 @@ CREATE TABLE practicantes (
 
 ### Relationships
 
-- **One-to-Many** with `asistencia`: One intern can have multiple attendance records
+- **One-to-Many** with `asistencia`: One intern can have multiple attendance records *(Schema only - not used in actual implementation)*
 
 ### Usage Example
 
@@ -96,16 +102,22 @@ WHERE correo = 'juan.perez@example.com';
 
 Records daily attendance entries for interns, including entry and exit times.
 
-### Schema
+<Note>
+**Schema Discrepancy**: The `bd.sql` file shows `practicante_id` as the foreign key, but the **actual application code** uses `usuario_id` to reference the `usuarios` table. All interns are stored as users with `rol_id = 3` (practicante role).
+
+This documentation reflects the **actual implementation** used in the code.
+</Note>
+
+### Schema (Actual Implementation)
 
 ```sql
 CREATE TABLE asistencia (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    practicante_id INT NOT NULL,
+    usuario_id INT NOT NULL,
     fecha DATE NOT NULL,
     hora_entrada TIME NOT NULL,
     hora_salida TIME NULL,
-    FOREIGN KEY (practicante_id) REFERENCES practicantes(id)
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
 );
 ```
 
@@ -115,14 +127,15 @@ CREATE TABLE asistencia (
   Primary key identifier for the attendance record. Auto-incremented for each new entry.
 </ResponseField>
 
-<ResponseField name="practicante_id" type="INT" required>
-  Foreign key reference to the intern's ID in the `practicantes` table. Links each attendance record to a specific intern.
+<ResponseField name="usuario_id" type="INT" required>
+  Foreign key reference to the user's ID in the `usuarios` table. Links each attendance record to a specific intern (user with `rol_id = 3`).
   
-  **Foreign Key**: References `practicantes(id)`
+  **Foreign Key**: References `usuarios(id)`  
+  **Usage**: All interns are stored in `usuarios` table, not in the separate `practicantes` table
 </ResponseField>
 
 <ResponseField name="fecha" type="DATE" required>
-  The date of the attendance record. Combined with `practicante_id`, this tracks which days an intern was present.
+  The date of the attendance record. Combined with `usuario_id`, this tracks which days an intern was present.
   
   **Format**: `YYYY-MM-DD`
 </ResponseField>
@@ -150,15 +163,15 @@ CREATE TABLE asistencia (
   </Accordion>
   
   <Accordion title="Foreign Key">
-    - **Column**: `practicante_id`
-    - **References**: `practicantes(id)`
-    - **Purpose**: Ensures attendance records are always linked to valid interns
+    - **Column**: `usuario_id`
+    - **References**: `usuarios(id)`
+    - **Purpose**: Ensures attendance records are always linked to valid users (interns)
     - **Behavior**: Prevents orphaned attendance records
   </Accordion>
   
   <Accordion title="NOT NULL Constraints">
     Required fields for every attendance record:
-    - `practicante_id` - Must link to a valid intern
+    - `usuario_id` - Must link to a valid user (intern)
     - `fecha` - Must have a date
     - `hora_entrada` - Entry time is mandatory
     
@@ -169,13 +182,13 @@ CREATE TABLE asistencia (
 
 ### Relationships
 
-- **Many-to-One** with `practicantes`: Multiple attendance records belong to one intern
+- **Many-to-One** with `usuarios`: Multiple attendance records belong to one user (intern)
 
-### Usage Examples
+### Usage Examples (Actual Implementation)
 
 ```sql
 -- Clock in (entry)
-INSERT INTO asistencia (practicante_id, fecha, hora_entrada)
+INSERT INTO asistencia (usuario_id, fecha, hora_entrada)
 VALUES (1, '2024-03-05', '09:00:00');
 
 -- Clock out (exit) - update existing record
@@ -184,16 +197,23 @@ SET hora_salida = '17:30:00'
 WHERE id = 1;
 
 -- Get today's attendance with intern names
-SELECT p.nombre, a.hora_entrada, a.hora_salida
+SELECT u.nombre, a.hora_entrada, a.hora_salida
 FROM asistencia a
-JOIN practicantes p ON a.practicante_id = p.id
-WHERE a.fecha = CURDATE();
+JOIN usuarios u ON a.usuario_id = u.id
+WHERE a.fecha = CURDATE() AND u.rol_id = 3;
 
 -- Find interns currently present (no exit time)
-SELECT p.nombre, a.hora_entrada
+SELECT u.nombre, a.hora_entrada
 FROM asistencia a
-JOIN practicantes p ON a.practicante_id = p.id
-WHERE a.fecha = CURDATE() AND a.hora_salida IS NULL;
+JOIN usuarios u ON a.usuario_id = u.id
+WHERE a.fecha = CURDATE() 
+  AND a.hora_salida IS NULL
+  AND u.rol_id = 3;
+
+-- Get all attendance records for a specific intern
+SELECT * FROM asistencia 
+WHERE usuario_id = '$usuario_id'
+ORDER BY fecha DESC;
 ```
 
 <Note>
@@ -295,7 +315,11 @@ Modifying or deleting default roles may break the application's permission logic
 
 ## usuarios
 
-Stores user accounts for system authentication and authorization.
+Stores user accounts for system authentication and authorization. **This table also stores all intern (practicante) data** - interns are users with `rol_id = 3`.
+
+<Note>
+**Implementation Note**: Unlike the `bd.sql` schema which defines a separate `practicantes` table, the actual application stores all interns in the `usuarios` table. The `asistencia` table references `usuarios.id` via the `usuario_id` foreign key.
+</Note>
 
 ### Schema
 
@@ -386,6 +410,7 @@ CREATE TABLE usuarios (
 ### Relationships
 
 - **Many-to-One** with `roles`: Multiple users can have the same role
+- **One-to-Many** with `asistencia`: One user (intern) can have multiple attendance records
 
 ### Usage Examples
 
@@ -415,6 +440,12 @@ SELECT u.nombre, u.correo
 FROM usuarios u
 JOIN roles r ON u.rol_id = r.id
 WHERE r.nombre = 'admin';
+
+-- Get all interns (practicantes)
+SELECT u.id, u.nombre, u.correo, u.fecha_registro
+FROM usuarios u
+WHERE u.rol_id = 3  -- practicante role
+ORDER BY u.fecha_registro DESC;
 ```
 
 <Warning>
@@ -435,15 +466,15 @@ The `fecha_registro` field is automatically populated with the current timestamp
 
 ## Summary
 
-The database consists of four interconnected tables:
+The database consists of four tables, though only three are actively used in the application:
 
 <CardGroup cols={2}>
   <Card title="practicantes" icon="users">
-    **4 columns** | Stores intern profiles and entry dates
+    **4 columns** | Defined in schema but **NOT USED** - see usuarios instead
   </Card>
   
   <Card title="asistencia" icon="clock">
-    **5 columns** | Tracks daily entry and exit times
+    **5 columns** | Tracks daily entry and exit times (uses `usuario_id`)
   </Card>
   
   <Card title="roles" icon="shield">
@@ -451,17 +482,21 @@ The database consists of four interconnected tables:
   </Card>
   
   <Card title="usuarios" icon="user-lock">
-    **6 columns** | Manages user authentication and access
+    **6 columns** | Manages authentication AND stores intern data
   </Card>
 </CardGroup>
 
 ### Total Schema Statistics
 
-- **Tables**: 4
-- **Foreign Keys**: 2
+- **Tables**: 4 (3 actively used)
+- **Foreign Keys**: 2 (`asistencia.usuario_id` → `usuarios.id`, `usuarios.rol_id` → `roles.id`)
 - **Unique Constraints**: 3
 - **Auto-Increment Fields**: 4
 - **Default Values**: 1 (CURRENT_TIMESTAMP)
+
+<Warning>
+**Schema vs. Implementation**: The `bd.sql` file defines `asistencia.practicante_id` referencing `practicantes(id)`, but the actual code uses `asistencia.usuario_id` referencing `usuarios(id)`. All interns are stored in `usuarios` with `rol_id = 3`.
+</Warning>
 
 <Card title="View Relationships" icon="diagram-project" href="./relationships">
   Explore how these tables connect through foreign keys and joins

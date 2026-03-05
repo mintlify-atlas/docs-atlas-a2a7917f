@@ -70,9 +70,9 @@ The reports page displays three main report cards:
         <div class="card-header">Asistencias por Mes</div>
         <div class="card-body">
             <?php
-            $query = "SELECT MONTH(fecha) as mes, COUNT(*) as total 
-                      FROM asistencia 
-                      GROUP BY MONTH(fecha)";
+            $query = "SELECT MONTH(a.fecha) as mes, COUNT(*) as total 
+                      FROM asistencia a
+                      GROUP BY MONTH(a.fecha)";
             $result = $conn->query($query);
             while($reporte = $result->fetch_assoc()) {
                 echo "<p>Mes {$reporte['mes']}: {$reporte['total']} asistencias</p>";
@@ -143,10 +143,11 @@ The reports page displays three main report cards:
         <div class="card-header">Asistencias por Practicante</div>
         <div class="card-body">
             <?php
-            $query = "SELECT p.nombre, COUNT(a.id) as total 
-                      FROM practicantes p 
-                      LEFT JOIN asistencia a ON p.id = a.practicante_id 
-                      GROUP BY p.id";
+            $query = "SELECT u.nombre, COUNT(a.id) as total 
+                      FROM usuarios u 
+                      LEFT JOIN asistencia a ON u.id = a.usuario_id 
+                      WHERE u.rol_id = 3
+                      GROUP BY u.id";
             $result = $conn->query($query);
             while($reporte = $result->fetch_assoc()) {
                 echo "<p>{$reporte['nombre']}: {$reporte['total']} asistencias</p>";
@@ -157,9 +158,10 @@ The reports page displays three main report cards:
     ```
 
     This query:
-    - Joins `practicantes` table with `asistencia` table
+    - Joins `usuarios` table with `asistencia` table
+    - Filters for interns only (`rol_id = 3`)
     - Uses LEFT JOIN to include practicantes with zero attendance
-    - Groups by practicante ID
+    - Groups by user ID
     - Counts attendance records per practicante
   </Tab>
 
@@ -171,22 +173,24 @@ The reports page displays three main report cards:
     ```
   </Tab>
 
-  <Tab title="Data Inconsistency">
-    <Warning>
-      **Schema Mismatch**: The query references the `practicantes` table, but the actual implementation stores practicante data in the `usuarios` table with `rol_id = 3`.
-
-      The attendance table uses `usuario_id` as the foreign key, not `practicante_id`.
-
-      **Corrected Query:**
+  <Tab title="Enhanced Query">
+    <Note>
+      **Enhanced Version with Sorting:**
       ```sql
-      SELECT u.nombre, COUNT(a.id) as total 
+      SELECT 
+          u.nombre, 
+          COUNT(a.id) as total,
+          SUM(CASE WHEN a.hora_salida IS NOT NULL THEN 1 ELSE 0 END) as completas,
+          SUM(CASE WHEN a.hora_salida IS NULL THEN 1 ELSE 0 END) as incompletas
       FROM usuarios u 
       LEFT JOIN asistencia a ON u.id = a.usuario_id 
       WHERE u.rol_id = 3
-      GROUP BY u.id
+      GROUP BY u.id, u.nombre
       ORDER BY total DESC;
       ```
-    </Warning>
+      
+      This enhanced query also shows complete vs incomplete attendance counts.
+    </Note>
   </Tab>
 </Tabs>
 
@@ -407,7 +411,9 @@ $result = $conn->query(
 
 ```php
 // Active practicantes
-$result = $conn->query("SELECT COUNT(*) as total FROM practicantes");
+$result = $conn->query(
+    "SELECT COUNT(*) as total FROM usuarios WHERE rol_id = 3"
+);
 
 // Today's attendance
 $result = $conn->query(

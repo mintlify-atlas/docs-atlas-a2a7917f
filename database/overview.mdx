@@ -7,6 +7,10 @@ description: 'Overview of the Asistencias database schema and architecture'
 
 The Asistencias system uses a MySQL relational database named `asistencia_practicantes`. The database is designed to track municipal interns (practicantes), their attendance records, and manage user access through a role-based authentication system.
 
+<Warning>
+**Schema vs. Implementation**: The `bd.sql` file defines a separate `practicantes` table, but the **actual application code does not use it**. All intern data is stored in the `usuarios` table with `rol_id = 3` (practicante role), and the `asistencia` table uses `usuario_id` to reference users, not `practicante_id`.
+</Warning>
+
 ### Database Name
 
 ```sql
@@ -15,17 +19,17 @@ asistencia_practicantes
 
 ## Schema Structure
 
-The database consists of **4 core tables** organized into functional groups:
+The database consists of **4 tables**, but only **3 are actively used** in the application:
 
 <CardGroup cols={2}>
   <Card title="User Management" icon="users">
-    - `usuarios` - System users
+    - `usuarios` - System users AND interns (`rol_id = 3`)
     - `roles` - User roles and permissions
   </Card>
   
   <Card title="Attendance Tracking" icon="calendar-check">
-    - `practicantes` - Intern profiles
-    - `asistencia` - Attendance records
+    - `asistencia` - Attendance records (uses `usuario_id`)
+    - `practicantes` - **NOT USED** (defined in schema only)
   </Card>
 </CardGroup>
 
@@ -35,22 +39,23 @@ The database consists of **4 core tables** organized into functional groups:
 
 The database enforces referential integrity through foreign key constraints:
 
-- **Attendance records** are linked to specific interns
+- **Attendance records** are linked to specific users (interns) via `usuario_id` foreign key
 - **Users** are assigned specific roles that define their permissions
+- Interns are identified by having `rol_id = 3` in the `usuarios` table
 - Cascading behaviors ensure data consistency
 
 ### Data Validation
 
 <AccordionGroup>
   <Accordion title="Unique Constraints">
-    - Email addresses must be unique in both `practicantes` and `usuarios` tables
+    - Email addresses must be unique in the `usuarios` table
     - Role names must be unique in the `roles` table
   </Accordion>
   
   <Accordion title="Required Fields">
-    - All interns must have name, email, and entry date
-    - Attendance records require intern ID, date, and entry time
-    - Users must have name, email, and password hash
+    - All users (including interns) must have name, email, and password hash
+    - Attendance records require user ID (`usuario_id`), date, and entry time
+    - Interns must have `rol_id = 3` in the `usuarios` table
   </Accordion>
   
   <Accordion title="Nullable Fields">
@@ -64,23 +69,25 @@ The database enforces referential integrity through foreign key constraints:
 - **Primary Keys**: All tables use `AUTO_INCREMENT` for ID generation
 - **Timestamps**: User registration timestamps are auto-generated on insert
 
-## Database Relationships
+## Database Relationships (Actual Implementation)
 
 ```mermaid
 erDiagram
-    practicantes ||--o{ asistencia : "has"
-    roles ||--o{ usuarios : "defines"
+    usuarios ||--o{ asistencia : "has attendance"
+    roles ||--o{ usuarios : "defines permissions"
     
-    practicantes {
+    usuarios {
         int id PK
         varchar nombre
         varchar correo UK
-        date fecha_ingreso
+        varchar password_hash
+        int rol_id FK
+        timestamp fecha_registro
     }
     
     asistencia {
         int id PK
-        int practicante_id FK
+        int usuario_id FK
         date fecha
         time hora_entrada
         time hora_salida
@@ -91,15 +98,17 @@ erDiagram
         varchar nombre UK
     }
     
-    usuarios {
-        int id PK
+    practicantes {
+        int id PK "UNUSED"
         varchar nombre
         varchar correo UK
-        varchar password_hash
-        int rol_id FK
-        timestamp fecha_registro
+        date fecha_ingreso
     }
 ```
+
+<Note>
+The `practicantes` table is defined in `bd.sql` but **not used in the application**. All intern data is in the `usuarios` table.
+</Note>
 
 ## Default Data
 

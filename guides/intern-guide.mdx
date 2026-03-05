@@ -190,18 +190,18 @@ Access your profile by clicking **"Perfil"** in the sidebar menu.
 
 ### Viewing Your Information
 
-Your profile displays:
+Your profile page displays your current account information at the top:
 
 <CardGroup cols={2}>
   <Card title="Personal Info" icon="user">
     - **Nombre**: Your full name
-    - **Correo Electrónico**: Your email address
+    - **Correo Electrónico**: Your email address (used for login)
   </Card>
   
   <Card title="Role Info" icon="id-badge">
     - **Rol**: Your role name (Practicante)
     
-    Joined from the roles table
+    Retrieved from the roles table via JOIN
   </Card>
 </CardGroup>
 
@@ -217,24 +217,40 @@ $result = $stmt->get_result();
 $usuario = $result->fetch_assoc();
 ```
 
-### Updating Your Profile
+### Editing Your Profile
 
-You can modify your personal information:
+Below the information display, you'll find an **"Editar Usuario"** section where you can update your profile.
 
 <Steps>
+  <Step title="Navigate to Profile Page">
+    Click **"Perfil"** in the sidebar menu to access your profile.
+  </Step>
+  
   <Step title="Scroll to Edit Section">
-    Below your profile information, you'll see the "Editar Usuario" section.
+    Below the "Información del Usuario" card, you'll see the "Editar Usuario" form.
   </Step>
   
-  <Step title="Modify Fields">
-    Update any of the following:
+  <Step title="Update Your Information">
+    Modify any of the following fields:
+    
     - **Nombre**: Change your display name
-    - **Correo**: Update your email address
-    - **Contraseña**: Enter a new password (leave blank to keep current)
+    - **Correo**: Update your email address (this changes your login email)
+    - **Contraseña**: Enter a new password (optional - leave blank to keep current)
+    
+    ```php
+    <form action="perfil.php" method="POST">
+        <input type="text" name="nombre" value="<?php echo $usuario['nombre']; ?>">
+        <input type="email" name="correo" value="<?php echo $usuario['correo']; ?>">
+        <input type="password" name="password">
+        <button type="submit" name="actualizar_perfil">Actualizar</button>
+    </form>
+    ```
   </Step>
   
-  <Step title="Submit Changes">
+  <Step title="Submit Your Changes">
     Click the **"Actualizar"** button to save your changes.
+    
+    The system processes your update securely:
     
     ```php
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -242,11 +258,11 @@ You can modify your personal information:
         $correo = $_POST['correo'];
         $password = $_POST['password'];
 
+        // Only update password if a new one is provided
         if (!empty($password)) {
             $password_hash = password_hash($password, PASSWORD_DEFAULT);
         } else {
-            $password_hash = isset($usuario['password_hash']) 
-                           ? $usuario['password_hash'] : '';
+            $password_hash = $usuario['password_hash'];
         }
 
         $update_query = "UPDATE usuarios 
@@ -255,18 +271,71 @@ You can modify your personal information:
         $update_stmt = $conn->prepare($update_query);
         $update_stmt->bind_param("sssi", $nombre, $correo, 
                                  $password_hash, $usuario_id);
+        $update_stmt->execute();
     }
     ```
   </Step>
   
   <Step title="Verify Success">
-    You'll see a success message: "Perfil actualizado con éxito."
+    After submission, you'll see a success message: **"Perfil actualizado con éxito."**
+    
+    The information card at the top will display your updated details.
   </Step>
 </Steps>
 
+<Warning>
+**Password Field Behavior**
+
+- The password field is **optional** - leave it empty to keep your current password
+- If you enter a password, it must be your new desired password
+- The system automatically hashes passwords using secure bcrypt encryption
+- You cannot view your current password (it's encrypted in the database)
+</Warning>
+
 <Tip>
-If you change your email address, use the new email for your next login.
+**Important:** If you change your email address, remember to use the new email for your next login. The email field serves as your username in the system.
 </Tip>
+
+### Profile Update Security
+
+The profile update feature includes several security measures:
+
+<Accordion title="Password Hashing">
+  Passwords are never stored in plain text. The system uses PHP's `password_hash()` with `PASSWORD_DEFAULT`:
+  
+  ```php
+  $password_hash = password_hash($password, PASSWORD_DEFAULT);
+  ```
+  
+  This uses bcrypt, one of the most secure password hashing algorithms.
+</Accordion>
+
+<Accordion title="Prepared Statements">
+  All database updates use prepared statements to prevent SQL injection attacks:
+  
+  ```php
+  $update_stmt = $conn->prepare("UPDATE usuarios 
+                                  SET nombre = ?, correo = ?, password_hash = ? 
+                                  WHERE id = ?");
+  $update_stmt->bind_param("sssi", $nombre, $correo, $password_hash, $usuario_id);
+  ```
+  
+  Your input is never directly inserted into SQL queries.
+</Accordion>
+
+<Accordion title="Session Validation">
+  The profile page verifies your identity on every request:
+  
+  ```php
+  session_start();
+  if (!isset($_SESSION['usuario_id']) || $_SESSION['rol_id'] != 3) {
+      header('Location: ../login.php');
+      exit;
+  }
+  ```
+  
+  Only authenticated interns with `rol_id = 3` can access intern profiles.
+</Accordion>
 
 ## Navigation Menu
 

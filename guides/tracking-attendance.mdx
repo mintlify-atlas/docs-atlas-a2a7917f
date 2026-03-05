@@ -19,16 +19,16 @@ Attendance records are stored in the `asistencia` table:
 ```sql
 CREATE TABLE asistencia (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    practicante_id INT NOT NULL,
+    usuario_id INT NOT NULL,
     fecha DATE NOT NULL,
     hora_entrada TIME NOT NULL,
     hora_salida TIME NULL,
-    FOREIGN KEY (practicante_id) REFERENCES practicantes(id)
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
 );
 ```
 
 <Note>
-**Important:** The schema shows `practicante_id`, but the current implementation uses `usuario_id` to reference the `usuarios` table directly.
+The system uses `usuario_id` to directly reference the `usuarios` table, eliminating the need for a separate `practicantes` table for attendance tracking.
 </Note>
 
 ## Intern Perspective: Marking Attendance
@@ -388,10 +388,11 @@ Administrators can access advanced reporting via `admin/reportes.php`.
   Total attendance count per intern:
   
   ```php
-  $query = "SELECT p.nombre, COUNT(a.id) as total 
-            FROM practicantes p 
-            LEFT JOIN asistencia a ON p.id = a.practicante_id 
-            GROUP BY p.id";
+  $query = "SELECT u.nombre, COUNT(a.id) as total 
+            FROM usuarios u 
+            LEFT JOIN asistencia a ON u.id = a.usuario_id 
+            WHERE u.rol_id = 3
+            GROUP BY u.id";
   $result = $conn->query($query);
   while($reporte = $result->fetch_assoc()) {
       echo "<p>{$reporte['nombre']}: {$reporte['total']} asistencias</p>";
