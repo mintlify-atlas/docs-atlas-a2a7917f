@@ -1,0 +1,96 @@
+{
+  "projectType": "saas",
+  "projectName": "Asistencias",
+  "projectDescription": "A comprehensive attendance tracking system for municipal interns with role-based access control for administrators, supervisors, and interns.",
+  "theme": "almond",
+  "primaryColor": "#4CAF50",
+  "lightColor": "#81C784",
+  "darkColor": "#2E7D32",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/user-roles",
+              "features/authentication",
+              "features/attendance-tracking",
+              "features/dashboards",
+              "features/reporting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Setup",
+            "pages": [
+              "guides/database-setup",
+              "guides/configuration",
+              "guides/security"
+            ]
+          },
+          {
+            "group": "Usage",
+            "pages": [
+              "guides/admin-guide",
+              "guides/supervisor-guide",
+              "guides/intern-guide",
+              "guides/managing-users",
+              "guides/tracking-attendance",
+              "guides/generating-reports"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Database",
+        "groups": [
+          {
+            "group": "Schema",
+            "pages": [
+              "database/overview",
+              "database/tables",
+              "database/relationships"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Role-based access control (Admin, Supervisor, Intern)",
+    "Attendance tracking with entry and exit times",
+    "User management and registration",
+    "Real-time dashboards for each role",
+    "Export attendance reports to Excel",
+    "Session-based authentication with password hashing",
+    "Input sanitization and SQL injection prevention"
+  ],
+  "publicApiSurface": [
+    "login.php - User authentication endpoint",
+    "registra_sesion.php - User registration endpoint",
+    "logout.php - Session termination endpoint",
+    "dasboards/admin_dashboard.php - Administrator dashboard",
+    "dasboards/supervisor_dashboard.php - Supervisor dashboard",
+    "dasboards/practicante_dashboard.php - Intern dashboard",
+    "admin/usuarios.php - User management interface",
+    "admin/practicantes.php - Intern management interface",
+    "admin/asistencias.php - Attendance tracking interface",
+    "admin/reportes.php - Reporting interface",
+    "supervisor/lista_asistencias.php - Attendance list view",
+    "db.php - Database connection and sanitization utilities"
+  ]
+}
