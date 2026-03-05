@@ -1,0 +1,480 @@
+---
+title: 'Security'
+description: 'Security best practices, authentication mechanisms, and vulnerability prevention for Asistencias'
+icon: 'shield-halved'
+---
+
+## Overview
+
+The Asistencias system implements multiple security layers including password hashing, prepared statements, input sanitization, and role-based access control. This guide covers all security features and best practices.
+
+## Authentication Security
+
+### Password Hashing
+
+The system uses PHP's built-in bcrypt algorithm for secure password storage:
+
+<CodeGroup>
+```php registra_sesion.php (lines 33-34)
+// Encriptar la contraseña
+$password_hash = password_hash($password, PASSWORD_BCRYPT);
+```
+
+```php guardar_usuario.php (lines 12-13)
+// Encriptar la contraseña
+$password_encriptada = password_hash($password, PASSWORD_BCRYPT);
+```
+</CodeGroup>
+
+**Security features of PASSWORD_BCRYPT:**
+- Automatic salt generation
+- Computationally expensive (prevents brute force)
+- Industry-standard hashing algorithm
+- Future-proof design
+
+<Warning>
+  Never store passwords in plain text. Always use `password_hash()` with PASSWORD_BCRYPT or stronger algorithms.
+</Warning>
+
+### Password Verification
+
+Authentication uses secure password comparison:
+
+```php login.php (line 20)
+if (password_verify($password, $usuario['password_hash'])) {
+    // Password is correct
+}
+```
+
+**Why use password_verify()?**
+- Timing-safe comparison (prevents timing attacks)
+- Automatically handles salt extraction
+- Compatible with future hash formats
+
+<Note>
+  Never compare password hashes using `==` or `===`. Always use `password_verify()` for secure validation.
+</Note>
+
+## SQL Injection Prevention
+
+### Prepared Statements
+
+The system uses prepared statements to prevent SQL injection attacks:
+
+<CodeGroup>
+```php login.php (lines 11-13)
+// Prepare SQL to prevent SQL injection
+$stmt = $conn->prepare("SELECT id, nombre, password_hash, rol_id FROM usuarios WHERE correo = ?");
+$stmt->bind_param("s", $correo);
+$stmt->execute();
+```
+
+```php registra_sesion.php (lines 25-27)
+$stmt = $conn->prepare("SELECT id FROM usuarios WHERE correo = ?");
+$stmt->bind_param("s", $correo);
+$stmt->execute();
+```
+
+```php registra_sesion.php (lines 37-38)
+$stmt = $conn->prepare("INSERT INTO usuarios (nombre, correo, password_hash, rol_id) VALUES (?, ?, ?, ?)");
+$stmt->bind_param("sssi", $nombre, $correo, $password_hash, $rol);
+```
+</CodeGroup>
+
+### Parameter Binding Types
+
+| Type | Description | Example |
+|------|-------------|--------|
+| `s` | String | Email, name, password hash |
+| `i` | Integer | User ID, role ID |
+| `d` | Double | Decimal numbers |
+| `b` | Blob | Binary data |
+
+<Warning>
+  **Security Issue Found**: The file `admin/guardar_usuario.php` uses string concatenation instead of prepared statements:
+  
+  ```php
+  // INSECURE - Vulnerable to SQL injection
+  $sql = "INSERT INTO usuarios (nombre, correo, password_hash, rol_id) 
+          VALUES ('$nombre', '$correo', '$password_encriptada', '$rol_id')";
+  ```
+  
+  This should be refactored to use prepared statements like `registra_sesion.php`.
+</Warning>
+
+## Input Validation and Sanitization
+
+### Multi-Layer Validation
+
+The registration system implements comprehensive input validation:
+
+<CodeGroup>
+```php registra_sesion.php (lines 10-11)
+$nombre = sanitize_input($_POST['nombre']);
+$correo = filter_var($_POST['correo'], FILTER_SANITIZE_EMAIL);
+```
+
+```php registra_sesion.php (lines 17-22)
+if (empty($nombre) || empty($correo) || empty($password)) {
+    $error = "Por favor, complete todos los campos.";
+} elseif (!filter_var($correo, FILTER_VALIDATE_EMAIL)) {
+    $error = "Formato de correo inválido.";
+} elseif ($password !== $confirm_password) {
+    $error = "Las contraseñas no coinciden.";
+}
+```
+</CodeGroup>
+
+### Sanitization Function
+
+Global input sanitization from `db.php`:
+
+```php db.php (lines 15-21)
+function sanitize_input($data) {
+    $data = trim($data);              // Remove whitespace
+    $data = stripslashes($data);      // Remove backslashes
+    $data = htmlspecialchars($data);  // Escape HTML characters
+ 
+    return $data;
+}
+```
+
+**Protection against:**
+- XSS (Cross-Site Scripting) attacks
+- HTML injection
+- Leading/trailing whitespace issues
+
+### Type Casting for Integers
+
+```php registra_sesion.php (line 14)
+$rol = intval($_POST['rol']);
+```
+
+Always cast numeric inputs to prevent type juggling attacks.
+
+## Session Management
+
+### Session Initialization
+
+<CodeGroup>
+```php login.php (line 3)
+session_start();
+```
+
+```php logout.php (lines 2-3)
+session_start();
+session_destroy();
+```
+</CodeGroup>
+
+### Session Variables
+
+Secure session data storage after authentication:
+
+```php login.php (lines 22-24)
+$_SESSION['usuario_id'] = $usuario['id'];
+$_SESSION['nombre'] = $usuario['nombre'];
+$_SESSION['rol_id'] = $usuario['rol_id'];
+```
+
+### Session Security Configuration
+
+Recommended production configuration:
+
+```php
+session_start([
+    'cookie_lifetime' => 0,              // Session cookie (expires on browser close)
+    'cookie_secure' => true,             // HTTPS only
+    'cookie_httponly' => true,           // Not accessible via JavaScript
+    'cookie_samesite' => 'Strict',       // CSRF protection
+    'use_strict_mode' => true,           // Reject uninitialized session IDs
+    'use_only_cookies' => true,          // Prevent session fixation
+    'sid_length' => 48,                  // Longer session IDs
+    'sid_bits_per_character' => 6        // More entropy per character
+]);
+```
+
+<Info>
+  These settings should be added to a security configuration file and included in all PHP files that use sessions.
+</Info>
+
+## Role-Based Access Control (RBAC)
+
+### Role Definitions
+
+Three distinct roles with different permission levels:
+
+```php login.php (lines 27-36)
+switch ($usuario['rol_id']) {
+    case 1: // Admin
+        header("Location: dasboards/admin_dashboard.php");
+        break;
+    case 2: // Supervisor
+        header("Location: dasboards/supervisor_dashboard.php");
+        break;
+    case 3: // Practicante
+        header("Location: dasboards/practicante_dashboard.php");
+}
+```
+
+### Role Hierarchy
+
+| Role ID | Role Name | Permissions |
+|---------|-----------|-------------|
+| 1 | admin | Full system access, user management, all reports |
+| 2 | supervisor | View/manage intern attendance, reports |
+| 3 | practicante | Clock in/out, view own attendance |
+
+### Access Control Implementation
+
+Add this to protected pages:
+
+```php
+session_start();
+
+// Check if user is logged in
+if (!isset($_SESSION['usuario_id'])) {
+    header("Location: ../login.php");
+    exit();
+}
+
+// Check if user has admin role
+if ($_SESSION['rol_id'] !== 1) {
+    header("Location: ../login.php");
+    exit();
+}
+```
+
+<Warning>
+  Always validate both authentication (logged in) and authorization (correct role) on protected pages.
+</Warning>
+
+## Email Validation
+
+Double validation ensures email integrity:
+
+```php registra_sesion.php (lines 11, 19-20)
+$correo = filter_var($_POST['correo'], FILTER_SANITIZE_EMAIL);
+// ...
+if (!filter_var($correo, FILTER_VALIDATE_EMAIL)) {
+    $error = "Formato de correo inválido.";
+}
+```
+
+**Two-step process:**
+1. `FILTER_SANITIZE_EMAIL` - Remove illegal characters
+2. `FILTER_VALIDATE_EMAIL` - Verify valid email format
+
+## Duplicate Account Prevention
+
+```php registra_sesion.php (lines 25-31)
+$stmt = $conn->prepare("SELECT id FROM usuarios WHERE correo = ?");
+$stmt->bind_param("s", $correo);
+$stmt->execute();
+$stmt->store_result();
+
+if ($stmt->num_rows > 0) {
+    $error = "El correo ya está registrado.";
+}
+```
+
+Database constraint enforcement:
+
+```sql bd.sql (line 34)
+correo VARCHAR(100) UNIQUE NOT NULL,
+```
+
+## Security Checklist
+
+<Steps>
+  <Step title="Password Security">
+    - [x] Passwords hashed with PASSWORD_BCRYPT
+    - [x] Password verification using password_verify()
+    - [ ] Implement password strength requirements
+    - [ ] Add password reset functionality with tokens
+  </Step>
+
+  <Step title="SQL Injection Prevention">
+    - [x] Prepared statements in login.php
+    - [x] Prepared statements in registra_sesion.php
+    - [ ] Refactor admin/guardar_usuario.php to use prepared statements
+    - [ ] Audit all database queries across the application
+  </Step>
+
+  <Step title="Input Validation">
+    - [x] Email validation and sanitization
+    - [x] HTML special character escaping
+    - [x] Integer type casting for role IDs
+    - [ ] Add CSRF token protection for forms
+  </Step>
+
+  <Step title="Session Security">
+    - [x] Session-based authentication
+    - [x] Proper session destruction on logout
+    - [ ] Implement secure session configuration
+    - [ ] Add session timeout
+    - [ ] Implement session regeneration after login
+  </Step>
+
+  <Step title="Access Control">
+    - [x] Role-based access control structure
+    - [x] Role-based dashboard routing
+    - [ ] Add page-level authorization checks
+    - [ ] Implement permission middleware
+  </Step>
+</Steps>
+
+## Vulnerability Fixes
+
+### Critical: Fix SQL Injection in Admin Module
+
+Replace the vulnerable code in `admin/guardar_usuario.php`:
+
+```php
+// BEFORE (Vulnerable)
+$sql = "INSERT INTO usuarios (nombre, correo, password_hash, rol_id) 
+        VALUES ('$nombre', '$correo', '$password_encriptada', '$rol_id')";
+if ($conn->query($sql) === TRUE) {
+    // ...
+}
+
+// AFTER (Secure)
+$stmt = $conn->prepare("INSERT INTO usuarios (nombre, correo, password_hash, rol_id) VALUES (?, ?, ?, ?)");
+$stmt->bind_param("sssi", $nombre, $correo, $password_encriptada, $rol_id);
+if ($stmt->execute()) {
+    // ...
+}
+$stmt->close();
+```
+
+### Add CSRF Protection
+
+Generate token on form pages:
+
+```php
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+```
+
+Add to forms:
+
+```html
+<input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+```
+
+Validate on submission:
+
+```php
+if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+    die('CSRF token validation failed');
+}
+```
+
+### Implement Rate Limiting
+
+Protect login endpoint from brute force:
+
+```php
+session_start();
+
+if (!isset($_SESSION['login_attempts'])) {
+    $_SESSION['login_attempts'] = 0;
+    $_SESSION['last_attempt'] = time();
+}
+
+// Reset counter after 15 minutes
+if (time() - $_SESSION['last_attempt'] > 900) {
+    $_SESSION['login_attempts'] = 0;
+}
+
+if ($_SESSION['login_attempts'] >= 5) {
+    die('Too many login attempts. Please try again in 15 minutes.');
+}
+
+// After failed login
+$_SESSION['login_attempts']++;
+$_SESSION['last_attempt'] = time();
+```
+
+## Production Security Configuration
+
+### PHP Configuration (php.ini)
+
+```ini
+; Disable error display
+display_errors = Off
+log_errors = On
+error_log = /var/log/php/errors.log
+
+; Session security
+session.cookie_httponly = 1
+session.cookie_secure = 1
+session.use_strict_mode = 1
+session.use_only_cookies = 1
+
+; File upload limits
+upload_max_filesize = 2M
+post_max_size = 2M
+
+; Disable dangerous functions
+disable_functions = exec,passthru,shell_exec,system,proc_open,popen
+```
+
+### HTTPS Configuration
+
+<Warning>
+  Always use HTTPS in production. Never transmit passwords or session cookies over HTTP.
+</Warning>
+
+```apache
+# Apache .htaccess
+RewriteEngine On
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+```
+
+### Database User Permissions
+
+```sql
+-- Create limited privilege user
+CREATE USER 'asistencias_user'@'localhost' IDENTIFIED BY 'strong_password_here';
+
+-- Grant only necessary permissions
+GRANT SELECT, INSERT, UPDATE, DELETE ON asistencia_practicantes.* TO 'asistencias_user'@'localhost';
+
+-- Do NOT grant DROP, CREATE, ALTER
+FLUSH PRIVILEGES;
+```
+
+## Security Monitoring
+
+### Log Authentication Events
+
+```php
+function log_security_event($event_type, $user_email, $success) {
+    $log_entry = sprintf(
+        "[%s] %s - User: %s - Success: %s - IP: %s\n",
+        date('Y-m-d H:i:s'),
+        $event_type,
+        $user_email,
+        $success ? 'Yes' : 'No',
+        $_SERVER['REMOTE_ADDR']
+    );
+    
+    file_put_contents('/var/log/asistencias/security.log', $log_entry, FILE_APPEND);
+}
+
+// Usage
+log_security_event('LOGIN_ATTEMPT', $correo, $login_successful);
+```
+
+## Additional Resources
+
+- [OWASP PHP Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/PHP_Configuration_Cheat_Sheet.html)
+- [PHP password_hash() Documentation](https://www.php.net/manual/en/function.password-hash.php)
+- [MySQL Prepared Statements](https://www.php.net/manual/en/mysqli.quickstart.prepared-statements.php)
+
+<Info>
+  For database setup and configuration details, see the [Database Setup](/guides/database-setup) and [Configuration](/guides/configuration) guides.
+</Info>

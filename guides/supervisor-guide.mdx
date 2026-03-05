@@ -1,0 +1,313 @@
+---
+title: 'Supervisor Guide'
+description: 'Guide for supervisors managing intern attendance and user oversight'
+icon: 'user-tie'
+---
+
+## Overview
+
+Supervisors have elevated permissions to manage intern attendance records and view user information. This role is designed for municipal supervisors who oversee daily intern operations without full administrative access.
+
+<Info>
+**Role ID:** 2 (Supervisor)
+
+**Access Level:** Attendance management and user viewing
+</Info>
+
+## Getting Started
+
+### Login and Dashboard Access
+
+<Steps>
+  <Step title="Authenticate">
+    Enter your email and password on the login page. The system redirects supervisors to their dedicated dashboard:
+    
+    ```php
+    case 2: // Supervisor
+        header("Location: dasboards/supervisor_dashboard.php");
+    ```
+  </Step>
+  
+  <Step title="View Dashboard Metrics">
+    The supervisor dashboard displays two key metrics:
+    
+    <CardGroup cols={2}>
+      <Card title="Practicantes Activos" icon="users" color="#0088cc">
+        Total count of interns from the practicantes table
+        
+        ```sql
+        SELECT COUNT(*) as total FROM practicantes
+        ```
+      </Card>
+      
+      <Card title="Asistencias Hoy" icon="calendar-check" color="#00aa00">
+        Today's attendance records
+        
+        ```sql
+        SELECT COUNT(*) as total 
+        FROM asistencia 
+        WHERE fecha = CURDATE()
+        ```
+      </Card>
+    </CardGroup>
+  </Step>
+</Steps>
+
+## Navigation and Features
+
+The supervisor sidebar provides access to essential functions:
+
+### Panel de Supervisor
+Main dashboard with overview statistics and quick links
+
+### Gestión de Usuarios
+View all users in the system with their roles and contact information
+
+### Asistencias
+Complete attendance management interface with viewing and export capabilities
+
+## Managing Attendance Records
+
+### Viewing Attendance Data
+
+Navigate to **Asistencias** from the sidebar to access the attendance list.
+
+<Tabs>
+  <Tab title="Table Columns">
+    | Column | Data Source | Description |
+    |--------|-------------|-------------|
+    | Practicante | usuarios.nombre | Intern's full name |
+    | Fecha | asistencia.fecha | Date of attendance |
+    | Hora Entrada | asistencia.hora_entrada | Check-in time |
+    | Hora Salida | asistencia.hora_salida | Check-out time or "No registrada" |
+    | Estado | Calculated | Badge showing completion status |
+  </Tab>
+  
+  <Tab title="SQL Query">
+    ```php
+    $query = "SELECT a.*, u.nombre 
+              FROM asistencia a 
+              JOIN usuarios u ON a.usuario_id = u.id 
+              ORDER BY a.fecha DESC";
+    $result = $conn->query($query);
+    ```
+  </Tab>
+  
+  <Tab title="Status Display">
+    ```php
+    while($asistencia = $result->fetch_assoc()) {
+        $estado = ($asistencia['hora_entrada'] && $asistencia['hora_salida']) 
+                  ? 'Completada' : 'Incompleta';
+        $estadoClass = $estado == 'Completada' ? 'success' : 'warning';
+        $hora_salida = $asistencia['hora_salida'] 
+                       ? $asistencia['hora_salida'] 
+                       : 'No registrada';
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Understanding Attendance Status
+
+<Accordion title="Completada (Complete)">
+  Displayed with a **green badge** when both check-in and check-out times are recorded.
+  
+  This indicates the intern successfully marked both entry and exit for that day.
+</Accordion>
+
+<Accordion title="Incompleta (Incomplete)">
+  Displayed with a **yellow badge** when either:
+  - Only check-in time is recorded (hora_salida is NULL)
+  - No check-out was performed
+  
+  The Hora Salida column will show "No registrada" for incomplete records.
+</Accordion>
+
+## Exporting Attendance Reports
+
+Supervisors can export attendance data for reporting and analysis:
+
+<Steps>
+  <Step title="Access Export Function">
+    On the **Asistencias** page, locate the **"Exportar a XLSX"** button in the top-right corner.
+  </Step>
+  
+  <Step title="Click Export">
+    The system generates an Excel file immediately:
+    
+    ```php
+    if (isset($_POST['exportar'])) {
+        header("Content-Type: application/vnd.ms-excel");
+        header("Content-Disposition: attachment; filename=asistencia.xls");
+        header("Pragma: no-cache");
+        header("Expires: 0");
+    }
+    ```
+  </Step>
+  
+  <Step title="Download and Review">
+    The exported file contains:
+    - Practicante ID (nombre)
+    - Fecha
+    - Hora de Entrada
+    - Hora de Salida
+    - Estado (Completa/Incompleta)
+  </Step>
+</Steps>
+
+<Tip>
+Exports include all historical attendance records, not just current data. Use Excel filtering to analyze specific date ranges or interns.
+</Tip>
+
+## Viewing User Information
+
+Supervisors can view all system users through **Gestión de Usuarios**:
+
+### User List Features
+
+<CardGroup cols={2}>
+  <Card title="View User Details" icon="eye">
+    See all user information including:
+    - ID number
+    - Full name
+    - Email address
+    - Role ID
+  </Card>
+  
+  <Card title="Action Buttons" icon="wrench">
+    Each user row displays:
+    - **Edit** button (links to editar_usuario.php)
+    - **Delete** button (links to eliminar_usuario.php)
+  </Card>
+</CardGroup>
+
+<Note>
+While supervisors can see edit and delete buttons, actual permission to modify users depends on the implementation of `editar_usuario.php` and `eliminar_usuario.php`.
+</Note>
+
+### User Table Query
+
+```php
+$stmt = $conn->prepare("SELECT u.*, r.nombre as rol_nombre 
+                        FROM usuarios u 
+                        JOIN roles r ON u.rol_id = r.id");
+$stmt->execute();
+$result = $stmt->get_result();
+
+if ($result->num_rows > 0) {
+    while ($usuario = $result->fetch_assoc()) {
+        // Display user row
+    }
+}
+```
+
+## Daily Workflow
+
+A typical supervisor workflow involves:
+
+<Steps>
+  <Step title="Morning Check">
+    Log in and review the **Asistencias Hoy** count on the dashboard to see how many interns have checked in.
+  </Step>
+  
+  <Step title="Monitor Throughout Day">
+    Periodically check the **Asistencias** page to verify interns are marking their entries and exits.
+  </Step>
+  
+  <Step title="End of Day Review">
+    Review incomplete attendance records and follow up with interns who haven't marked their exit.
+  </Step>
+  
+  <Step title="Weekly Export">
+    Export attendance data at the end of each week for reporting to municipal administrators.
+  </Step>
+</Steps>
+
+## Access Control
+
+### Authentication Verification
+
+All supervisor pages verify proper authentication:
+
+```php
+session_start();
+if (!isset($_SESSION['usuario_id']) || $_SESSION['rol_id'] != 2) {
+    header("Location: ../login.php");
+    exit();
+}
+```
+
+<Warning>
+Supervisor pages check for `rol_id != 2`. Some pages use `!in_array($_SESSION['rol_id'], [1, 2])` to allow both admins and supervisors.
+</Warning>
+
+### Session Management
+
+Your session stores:
+- `usuario_id`: Your unique user identifier
+- `nombre`: Your full name (displayed in dashboard)
+- `rol_id`: Set to 2 for supervisors
+
+## Best Practices
+
+<Accordion title="Regular Monitoring">
+  Check the dashboard multiple times per day to catch attendance issues early. Incomplete records are easier to resolve on the same day.
+</Accordion>
+
+<Accordion title="Export Regularly">
+  Don't wait until the last minute to export reports. Regular exports provide backup data and help identify attendance patterns.
+</Accordion>
+
+<Accordion title="Verify Data Accuracy">
+  Review attendance records for anomalies:
+  - Check-in times that seem too early or late
+  - Missing check-out times
+  - Duplicate entries for the same date
+</Accordion>
+
+<Accordion title="Coordinate with Admins">
+  For issues beyond your permissions (like user account problems), contact system administrators promptly.
+</Accordion>
+
+## Troubleshooting
+
+### Cannot Access Supervisor Dashboard
+
+<Steps>
+  <Step title="Verify Login">
+    Ensure you're using the correct email and password.
+  </Step>
+  
+  <Step title="Check Role Assignment">
+    Your account must have `rol_id = 2` in the database. Contact an administrator if you're being redirected to the wrong dashboard.
+  </Step>
+  
+  <Step title="Clear Browser Cache">
+    Session issues can sometimes be resolved by clearing cookies and logging in again.
+  </Step>
+</Steps>
+
+### Export File is Empty or Incomplete
+
+- Verify there are attendance records in the database
+- Check your browser's download settings
+- Try exporting with a different browser
+
+### Attendance Records Not Updating
+
+<Tip>
+Refresh the page to see the latest records. The system queries the database on each page load, so attendance marked by interns should appear immediately after refresh.
+</Tip>
+
+## Reporting Issues
+
+If you encounter technical problems:
+
+1. Note the exact error message or behavior
+2. Record which page you were on (URL)
+3. Check if the issue is reproducible
+4. Contact your system administrator with details
+
+<Note>
+Error logging is configured in some pages. Administrators can review error logs for detailed troubleshooting information.
+</Note>

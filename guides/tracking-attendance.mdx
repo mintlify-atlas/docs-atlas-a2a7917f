@@ -1,0 +1,649 @@
+---
+title: 'Tracking Attendance'
+description: 'Complete guide to attendance tracking workflows for all user roles'
+icon: 'clipboard-check'
+---
+
+## Overview
+
+Attendance tracking is the core functionality of the Asistencias system. This guide covers how interns mark their attendance, how supervisors monitor it, and how administrators manage the overall system.
+
+<Info>
+The system tracks both **entry time** (hora_entrada) and **exit time** (hora_salida) for each intern, each day.
+</Info>
+
+## Database Structure
+
+Attendance records are stored in the `asistencia` table:
+
+```sql
+CREATE TABLE asistencia (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    practicante_id INT NOT NULL,
+    fecha DATE NOT NULL,
+    hora_entrada TIME NOT NULL,
+    hora_salida TIME NULL,
+    FOREIGN KEY (practicante_id) REFERENCES practicantes(id)
+);
+```
+
+<Note>
+**Important:** The schema shows `practicante_id`, but the current implementation uses `usuario_id` to reference the `usuarios` table directly.
+</Note>
+
+## Intern Perspective: Marking Attendance
+
+### Daily Check-In Process
+
+Interns mark their attendance through the practicante dashboard.
+
+<Steps>
+  <Step title="Arrive at Internship Location">
+    When the intern arrives at their work site, they access the system via their mobile device or workstation.
+  </Step>
+  
+  <Step title="View Dashboard">
+    The dashboard automatically checks for today's attendance record:
+    
+    ```php
+    $query = "SELECT * FROM asistencia 
+              WHERE usuario_id = '$usuario_id' 
+              AND fecha = DATE(NOW())";
+    $result = mysqli_query($conn, $query);
+    $asistencia = mysqli_fetch_assoc($result);
+    ```
+  </Step>
+  
+  <Step title="Click Marcar Entrada">
+    If no record exists for today, the intern sees the **"Marcar Entrada"** button.
+    
+    ```php
+    if (!$asistencia) {
+        echo '<button type="submit" name="marcar_entrada" 
+                      class="btn btn-primary btn-block">
+                  Marcar Entrada
+              </button>';
+    }
+    ```
+  </Step>
+  
+  <Step title="Record Created">
+    Upon clicking, the system inserts a new attendance record:
+    
+    ```php
+    if (isset($_POST['marcar_entrada'])) {
+        $query = "INSERT INTO asistencia 
+                  (usuario_id, fecha, hora_entrada, hora_salida) 
+                  VALUES ('$usuario_id', DATE(NOW()), TIME(NOW()), NULL)";
+        mysqli_query($conn, $query);
+        header('Location: practicante_dashboard.php');
+        exit;
+    }
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+**Automatic Timestamps**
+
+The system uses MySQL functions to capture exact timestamps:
+- `DATE(NOW())`: Current date (YYYY-MM-DD)
+- `TIME(NOW())`: Current time (HH:MM:SS)
+
+No manual time entry is required.
+</Tip>
+
+### Daily Check-Out Process
+
+<Steps>
+  <Step title="End of Day">
+    Before leaving, the intern accesses their dashboard again.
+  </Step>
+  
+  <Step title="View Updated Interface">
+    The button has changed to **"Marcar Salida"** because a record exists:
+    
+    ```php
+    else {
+        echo '<button type="submit" name="marcar_salida" 
+                      class="btn btn-primary btn-block">
+                  Marcar Salida
+              </button>';
+    }
+    ```
+  </Step>
+  
+  <Step title="Click Marcar Salida">
+    This updates the existing record with the exit time:
+    
+    ```php
+    if (isset($_POST['marcar_salida'])) {
+        $query = "UPDATE asistencia 
+                  SET hora_salida = TIME(NOW()) 
+                  WHERE usuario_id = '$usuario_id' 
+                  AND fecha = DATE(NOW())";
+        mysqli_query($conn, $query);
+        header('Location: practicante_dashboard.php');
+        exit;
+    }
+    ```
+  </Step>
+  
+  <Step title="Record Completed">
+    The attendance record now has both entry and exit times, marking it as "Completada".
+  </Step>
+</Steps>
+
+### Viewing Personal History
+
+Interns can see all their attendance records in a table below the button:
+
+```php
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Fecha</th>
+            <th>Hora Entrada</th>
+            <th>Hora Salida</th>
+        </tr>
+    </thead>
+    <tbody>
+        <?php
+        $query = "SELECT * FROM asistencia WHERE usuario_id = '$usuario_id'";
+        $result = mysqli_query($conn, $query);
+        while ($asistencia_registro = mysqli_fetch_assoc($result)) {
+            echo "<tr>
+                    <td>{$asistencia_registro['fecha']}</td>
+                    <td>{$asistencia_registro['hora_entrada']}</td>
+                    <td>{$asistencia_registro['hora_salida']}</td>
+                  </tr>";
+        }
+        ?>
+    </tbody>
+</table>
+```
+
+<Accordion title="What if I forgot to check in?">
+  Once the date has passed, interns cannot retroactively mark attendance. They must contact their supervisor to have the record manually added or corrected.
+</Accordion>
+
+<Accordion title="What if I forgot to check out?">
+  The record will remain incomplete with NULL in the `hora_salida` field. Contact your supervisor to have the time updated if it was a genuine oversight.
+</Accordion>
+
+<Accordion title="Can I edit my times?">
+  No, interns cannot edit attendance records through the UI. All corrections must be made by administrators via database access.
+</Accordion>
+
+## Supervisor Perspective: Monitoring Attendance
+
+### Accessing Attendance Records
+
+Supervisors access attendance data via **Asistencias** in their sidebar menu.
+
+### Viewing All Records
+
+The attendance list displays all interns' records:
+
+<Tabs>
+  <Tab title="Table View">
+    | Column | Description | Display Logic |
+    |--------|-------------|---------------|
+    | Practicante | Intern's name | Joined from usuarios table |
+    | Fecha | Attendance date | asistencia.fecha |
+    | Hora Entrada | Check-in time | asistencia.hora_entrada |
+    | Hora Salida | Check-out time | asistencia.hora_salida or "No registrada" |
+    | Estado | Completion status | Badge: "Completada" or "Incompleta" |
+  </Tab>
+  
+  <Tab title="Query">
+    ```php
+    $query = "SELECT a.*, u.nombre 
+              FROM asistencia a 
+              JOIN usuarios u ON a.usuario_id = u.id 
+              ORDER BY a.fecha DESC";
+    $result = $conn->query($query);
+    ```
+  </Tab>
+  
+  <Tab title="Status Logic">
+    ```php
+    while($asistencia = $result->fetch_assoc()) {
+        // Determine status
+        $estado = ($asistencia['hora_entrada'] && $asistencia['hora_salida']) 
+                  ? 'Completada' : 'Incompleta';
+        
+        // Set badge color
+        $estadoClass = $estado == 'Completada' ? 'success' : 'warning';
+        
+        // Handle missing exit time
+        $hora_salida = $asistencia['hora_salida'] 
+                       ? $asistencia['hora_salida'] 
+                       : 'No registrada';
+        
+        echo "<span class='badge badge-{$estadoClass}'>{$estado}</span>";
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Understanding Status Badges
+
+<CardGroup cols={2}>
+  <Card title="Completada" icon="check-circle" color="#00aa00">
+    **Green Badge**
+    
+    Both `hora_entrada` AND `hora_salida` have values.
+    
+    Indicates the intern successfully checked in and out.
+  </Card>
+  
+  <Card title="Incompleta" icon="exclamation-triangle" color="#ffaa00">
+    **Yellow Badge**
+    
+    Either `hora_entrada` or `hora_salida` is NULL.
+    
+    Requires follow-up with the intern.
+  </Card>
+</CardGroup>
+
+### Dashboard Quick View
+
+The supervisor dashboard displays today's attendance count:
+
+```php
+$result = $conn->query("SELECT COUNT(*) as total 
+                        FROM asistencia 
+                        WHERE fecha = CURDATE()");
+$row = $result->fetch_assoc();
+echo "<h5 class='card-title'>{$row['total']} Registros</h5>";
+```
+
+<Tip>
+Check this metric throughout the day to ensure all interns have checked in. A low count may indicate missing attendance.
+</Tip>
+
+### Exporting Attendance Data
+
+Supervisors can export all attendance records:
+
+<Steps>
+  <Step title="Navigate to Asistencias Page">
+    Access the full attendance list.
+  </Step>
+  
+  <Step title="Click Exportar a XLSX">
+    Button located in the top-right corner of the page.
+  </Step>
+  
+  <Step title="Download File">
+    The system generates `asistencia.xls` immediately:
+    
+    ```php
+    if (isset($_POST['exportar'])) {
+        $query = "SELECT u.nombre, a.fecha, a.hora_entrada, a.hora_salida,
+                  CASE 
+                      WHEN a.hora_entrada IS NOT NULL 
+                           AND a.hora_salida IS NOT NULL 
+                      THEN 'Completada' 
+                      ELSE 'Incompleta' 
+                  END AS estado
+                  FROM asistencia a
+                  JOIN usuarios u ON a.usuario_id = u.id
+                  ORDER BY a.fecha DESC";
+        
+        $result = mysqli_query($conn, $query);
+        
+        header("Content-Type: application/vnd.ms-excel");
+        header("Content-Disposition: attachment; filename=asistencia.xls");
+        header("Pragma: no-cache");
+        header("Expires: 0");
+        
+        // Generate Excel table
+    }
+    ```
+  </Step>
+  
+  <Step title="Open in Excel">
+    The downloaded file can be opened in Microsoft Excel, LibreOffice Calc, or Google Sheets for further analysis.
+  </Step>
+</Steps>
+
+## Administrator Perspective: System Management
+
+### Viewing All Attendance
+
+Administrators access attendance via `admin/asistencias.php`.
+
+### Dashboard Metrics
+
+The admin dashboard shows today's attendance at a glance:
+
+```php
+$result = $conn->query("SELECT COUNT(*) as total 
+                        FROM asistencia 
+                        WHERE fecha = CURDATE()");
+$row = $result->fetch_assoc();
+echo "<h5 class='card-title'>{$row['total']} Registros</h5>";
+```
+
+This provides immediate visibility into daily attendance levels.
+
+### Full Attendance Table
+
+The admin attendance page is identical to the supervisor view:
+
+- Same table columns
+- Same status badges
+- Same export functionality
+- Same sorting (ORDER BY fecha DESC)
+
+<Note>
+The only difference is the authentication check:
+
+**Admin:** `$_SESSION['rol_id'] != 1`
+
+**Supervisor:** `$_SESSION['rol_id'] != 2`
+</Note>
+
+### Export Capabilities
+
+Administrators have the same export function:
+
+```php
+header("Content-Type: application/vnd.ms-excel");
+header("Content-Disposition: attachment; filename=asistencia.xls");
+```
+
+The exported file includes:
+- Practicante nombre
+- Fecha
+- Hora de Entrada
+- Hora de Salida
+- Estado (Completa/Incompleta)
+
+## Attendance Reporting
+
+Administrators can access advanced reporting via `admin/reportes.php`.
+
+### Available Reports
+
+<Accordion title="Asistencias por Mes">
+  Monthly attendance counts grouped by month:
+  
+  ```php
+  $query = "SELECT MONTH(fecha) as mes, COUNT(*) as total 
+            FROM asistencia 
+            GROUP BY MONTH(fecha)";
+  $result = $conn->query($query);
+  while($reporte = $result->fetch_assoc()) {
+      echo "<p>Mes {$reporte['mes']}: {$reporte['total']} asistencias</p>";
+  }
+  ```
+  
+  Shows attendance trends across different months.
+</Accordion>
+
+<Accordion title="Asistencias por Practicante">
+  Total attendance count per intern:
+  
+  ```php
+  $query = "SELECT p.nombre, COUNT(a.id) as total 
+            FROM practicantes p 
+            LEFT JOIN asistencia a ON p.id = a.practicante_id 
+            GROUP BY p.id";
+  $result = $conn->query($query);
+  while($reporte = $result->fetch_assoc()) {
+      echo "<p>{$reporte['nombre']}: {$reporte['total']} asistencias</p>";
+  }
+  ```
+  
+  Identifies interns with low attendance.
+</Accordion>
+
+<Accordion title="Asistencias Totales">
+  System-wide attendance count:
+  
+  ```php
+  $query = "SELECT COUNT(*) as total FROM asistencia";
+  $result = $conn->query($query);
+  $total_asistencias = $result->fetch_assoc()['total'];
+  echo "<p>Total de asistencias: {$total_asistencias}</p>";
+  ```
+  
+  Provides overall system usage statistics.
+</Accordion>
+
+### Export Reports
+
+The reports page includes an **Export** button for downloading report data.
+
+<Tip>
+Use these reports for:
+- Monthly summaries to municipal leadership
+- Identifying attendance patterns
+- Evaluating intern participation
+- Compliance documentation
+</Tip>
+
+## Attendance Workflows
+
+### Standard Daily Workflow
+
+<Steps>
+  <Step title="Morning: Interns Check In">
+    Between arrival hours (e.g., 8:00-9:00 AM), interns mark their entrada.
+  </Step>
+  
+  <Step title="Mid-Morning: Supervisor Review">
+    Supervisor checks dashboard to verify all expected interns have checked in.
+  </Step>
+  
+  <Step title="Follow-Up Missing Check-Ins">
+    Supervisor contacts interns who haven't checked in to determine status.
+  </Step>
+  
+  <Step title="Evening: Interns Check Out">
+    Before leaving (e.g., 4:00-5:00 PM), interns mark their salida.
+  </Step>
+  
+  <Step title="End of Day: Verify Completeness">
+    Supervisor reviews attendance list for incomplete records.
+  </Step>
+</Steps>
+
+### Weekly Workflow
+
+<Steps>
+  <Step title="Monday: Review Previous Week">
+    Supervisor exports last week's data and identifies any issues.
+  </Step>
+  
+  <Step title="Mid-Week: Ongoing Monitoring">
+    Daily checks ensure no accumulation of incomplete records.
+  </Step>
+  
+  <Step title="Friday: Export Weekly Report">
+    Generate and save weekly attendance summary.
+  </Step>
+  
+  <Step title="Submit to Administration">
+    Provide weekly report to municipal administrators.
+  </Step>
+</Steps>
+
+### Monthly Workflow
+
+<Steps>
+  <Step title="Month End: Generate Reports">
+    Administrator accesses reportes.php for monthly statistics.
+  </Step>
+  
+  <Step title="Analyze Trends">
+    Review "Asistencias por Mes" and "Asistencias por Practicante" reports.
+  </Step>
+  
+  <Step title="Export Complete Data">
+    Download full month's attendance records via export function.
+  </Step>
+  
+  <Step title="Archive Records">
+    Save exports in secure location for compliance and auditing.
+  </Step>
+</Steps>
+
+## Troubleshooting Attendance Issues
+
+### Intern Cannot Mark Attendance
+
+<Accordion title="Button Not Appearing">
+  **Cause:** Frontend display issue or session problem
+  
+  **Solution:**
+  - Refresh the page
+  - Clear browser cache
+  - Verify user is logged in as practicante (rol_id = 3)
+  - Check database for conflicting record
+</Accordion>
+
+<Accordion title="Button Click Does Nothing">
+  **Cause:** Form submission issue or database error
+  
+  **Solution:**
+  - Check browser console for JavaScript errors
+  - Verify database connection
+  - Check PHP error logs
+  - Ensure POST data is being received
+</Accordion>
+
+<Accordion title="Wrong Time Recorded">
+  **Cause:** Server timezone misconfiguration
+  
+  **Solution:**
+  - Verify MySQL timezone settings
+  - Check PHP timezone configuration
+  - Consider adding timezone adjustment in queries
+</Accordion>
+
+### Duplicate Records
+
+<Warning>
+If an intern accidentally creates multiple records for the same day, only one should exist.
+
+**Prevention:** Add a UNIQUE constraint:
+
+```sql
+ALTER TABLE asistencia 
+ADD UNIQUE KEY unique_attendance (usuario_id, fecha);
+```
+
+This prevents duplicate entries for the same user on the same date.
+</Warning>
+
+### Missing Records
+
+<Accordion title="Record Shows But Intern Didn't Attend">
+  **Cause:** Fraudulent check-in or system error
+  
+  **Solution:**
+  - Investigate with the intern
+  - Check IP address if logged
+  - Review timestamp for plausibility
+  - Delete fraudulent record via admin access
+</Accordion>
+
+<Accordion title="Intern Attended But No Record">
+  **Cause:** Intern forgot to check in or system failure
+  
+  **Solution:**
+  - Verify intern's claim
+  - Manually insert record via database:
+    ```sql
+    INSERT INTO asistencia (usuario_id, fecha, hora_entrada, hora_salida)
+    VALUES (123, '2026-03-05', '08:30:00', '17:00:00');
+    ```
+</Accordion>
+
+## Best Practices
+
+<Accordion title="Regular Monitoring">
+  - Check dashboard multiple times daily
+  - Don't wait until end of day to verify attendance
+  - Address incomplete records promptly
+  - Maintain communication with interns
+</Accordion>
+
+<Accordion title="Data Integrity">
+  - Implement UNIQUE constraints to prevent duplicates
+  - Add database-level validations
+  - Regular database backups
+  - Periodic data quality audits
+</Accordion>
+
+<Accordion title="Clear Policies">
+  - Establish check-in/check-out time windows
+  - Document consequences for missed attendance
+  - Create procedure for corrections
+  - Train interns on proper usage
+</Accordion>
+
+<Accordion title="Export Regularly">
+  - Don't rely solely on database for historical data
+  - Export weekly for backup purposes
+  - Archive exports in secure, organized manner
+  - Keep exports for required retention period
+</Accordion>
+
+## Advanced Features
+
+### Adding Geolocation Verification
+
+To ensure interns are on-site when checking in:
+
+```php
+// Capture location on check-in
+if (isset($_POST['marcar_entrada'])) {
+    $latitude = $_POST['latitude'];
+    $longitude = $_POST['longitude'];
+    
+    $query = "INSERT INTO asistencia 
+              (usuario_id, fecha, hora_entrada, hora_salida, 
+               latitude, longitude) 
+              VALUES (?, DATE(NOW()), TIME(NOW()), NULL, ?, ?)";
+    $stmt = $conn->prepare($query);
+    $stmt->bind_param("idd", $usuario_id, $latitude, $longitude);
+    $stmt->execute();
+}
+```
+
+Requires browser geolocation permission and database schema update.
+
+### Automated Reminders
+
+Send notifications for missing check-ins:
+
+```php
+// Check for users who haven't checked in by 10 AM
+$query = "SELECT u.id, u.nombre, u.correo 
+          FROM usuarios u
+          WHERE u.rol_id = 3
+          AND NOT EXISTS (
+              SELECT 1 FROM asistencia a 
+              WHERE a.usuario_id = u.id 
+              AND a.fecha = CURDATE()
+          )
+          AND TIME(NOW()) > '10:00:00'";
+
+// Send email reminders
+```
+
+### Attendance Analytics Dashboard
+
+Visualize attendance patterns with charts:
+
+- Daily attendance trends
+- Per-intern attendance rates
+- Average entry/exit times
+- Incomplete record percentages
+
+Integrate with Chart.js or similar library for visualization.

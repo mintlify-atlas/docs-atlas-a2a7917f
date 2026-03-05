@@ -1,0 +1,715 @@
+---
+title: 'Generating Reports'
+description: 'Complete guide to generating, exporting, and analyzing attendance reports'
+icon: 'chart-line'
+---
+
+## Overview
+
+The Asistencias system provides robust reporting capabilities for administrators and supervisors. This guide covers all reporting features, export options, and data analysis workflows.
+
+<Info>
+**Report Access**
+
+- **Administrators:** Full access to all reports via `admin/reportes.php`
+- **Supervisors:** Export capabilities via attendance list
+- **Interns:** Personal attendance history only
+</Info>
+
+## Report Types
+
+The system offers several built-in reports accessible from the admin reports page.
+
+### 1. Monthly Attendance Report
+
+Shows attendance counts grouped by month.
+
+<Tabs>
+  <Tab title="Description">
+    Displays total attendance records for each month, helping identify seasonal trends and participation patterns.
+    
+    **Use Cases:**
+    - Track attendance over time
+    - Identify busy vs. slow periods
+    - Plan resource allocation
+    - Generate monthly summaries
+  </Tab>
+  
+  <Tab title="Query">
+    ```php
+    $query = "SELECT MONTH(fecha) as mes, COUNT(*) as total 
+              FROM asistencia 
+              GROUP BY MONTH(fecha)";
+    $result = $conn->query($query);
+    while($reporte = $result->fetch_assoc()) {
+        echo "<p>Mes {$reporte['mes']}: {$reporte['total']} asistencias</p>";
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Output Format">
+    ```
+    Mes 1: 245 asistencias
+    Mes 2: 198 asistencias
+    Mes 3: 267 asistencias
+    ```
+    
+    Month numbers correspond to:
+    1 = January, 2 = February, etc.
+  </Tab>
+</Tabs>
+
+<Tip>
+For better readability, consider converting month numbers to names:
+
+```php
+$meses = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+          'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+echo "<p>{$meses[$reporte['mes']]}: {$reporte['total']} asistencias</p>";
+```
+</Tip>
+
+### 2. Attendance by Intern Report
+
+Shows total attendance count for each intern.
+
+<Tabs>
+  <Tab title="Description">
+    Lists every intern with their total number of attendance records, useful for identifying:
+    - Interns with perfect attendance
+    - Low-participation interns
+    - Overall engagement levels
+  </Tab>
+  
+  <Tab title="Query">
+    ```php
+    $query = "SELECT p.nombre, COUNT(a.id) as total 
+              FROM practicantes p 
+              LEFT JOIN asistencia a ON p.id = a.practicante_id 
+              GROUP BY p.id";
+    $result = $conn->query($query);
+    while($reporte = $result->fetch_assoc()) {
+        echo "<p>{$reporte['nombre']}: {$reporte['total']} asistencias</p>";
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Output Format">
+    ```
+    Juan Pérez: 45 asistencias
+    María García: 42 asistencias
+    Carlos López: 38 asistencias
+    Ana Martínez: 47 asistencias
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+**Schema Discrepancy**
+
+The current query references `practicantes` table and `practicante_id`. However, the implementation uses `usuarios` table and `usuario_id`. Update the query to:
+
+```php
+$query = "SELECT u.nombre, COUNT(a.id) as total 
+          FROM usuarios u 
+          WHERE u.rol_id = 3
+          LEFT JOIN asistencia a ON u.id = a.usuario_id 
+          GROUP BY u.id
+          ORDER BY total DESC";
+```
+</Note>
+
+### 3. Total Attendance Report
+
+Displays the overall system-wide attendance count.
+
+<Tabs>
+  <Tab title="Description">
+    Single metric showing cumulative attendance records across all time.
+    
+    **Use Cases:**
+    - System usage statistics
+    - Growth tracking
+    - Capacity planning
+    - Impact reporting
+  </Tab>
+  
+  <Tab title="Query">
+    ```php
+    $query = "SELECT COUNT(*) as total FROM asistencia";
+    $result = $conn->query($query);
+    $total_asistencias = $result->fetch_assoc()['total'];
+    echo "<p>Total de asistencias: {$total_asistencias}</p>";
+    ```
+  </Tab>
+  
+  <Tab title="Output Format">
+    ```
+    Total de asistencias: 1,247
+    ```
+  </Tab>
+</Tabs>
+
+## Exporting Attendance Data
+
+Both administrators and supervisors can export attendance records to Excel format.
+
+### Export Process
+
+<Steps>
+  <Step title="Navigate to Attendance Page">
+    Go to **Asistencias** from the sidebar menu.
+    
+    - Administrators: `admin/asistencias.php`
+    - Supervisors: `supervisor/lista_asistencias.php`
+  </Step>
+  
+  <Step title="Click Export Button">
+    Locate the **"Exportar a XLSX"** button in the top-right corner and click it.
+  </Step>
+  
+  <Step title="Download File">
+    The browser immediately downloads `asistencia.xls` file.
+    
+    ```php
+    if (isset($_POST['exportar'])) {
+        header("Content-Type: application/vnd.ms-excel");
+        header("Content-Disposition: attachment; filename=asistencia.xls");
+        header("Pragma: no-cache");
+        header("Expires: 0");
+    }
+    ```
+  </Step>
+  
+  <Step title="Open in Spreadsheet Application">
+    Open the file in:
+    - Microsoft Excel
+    - LibreOffice Calc
+    - Google Sheets
+    - Numbers (macOS)
+  </Step>
+</Steps>
+
+### Export File Structure
+
+The exported file contains the following columns:
+
+<CardGroup cols={2}>
+  <Card title="Practicante ID" icon="user">
+    Intern's full name (from usuarios.nombre)
+  </Card>
+  
+  <Card title="Fecha" icon="calendar">
+    Date of attendance record (YYYY-MM-DD)
+  </Card>
+  
+  <Card title="Hora de Entrada" icon="clock">
+    Check-in time (HH:MM:SS)
+  </Card>
+  
+  <Card title="Hora de Salida" icon="clock">
+    Check-out time (HH:MM:SS or empty)
+  </Card>
+  
+  <Card title="Estado" icon="flag">
+    "Completa" or "Incompleta"
+  </Card>
+</CardGroup>
+
+### Export Query
+
+```php
+$query = "SELECT u.nombre, a.fecha, a.hora_entrada, a.hora_salida,
+          CASE 
+              WHEN a.hora_entrada IS NOT NULL 
+                   AND a.hora_salida IS NOT NULL 
+              THEN 'Completada' 
+              ELSE 'Incompleta' 
+          END AS estado
+          FROM asistencia a
+          JOIN usuarios u ON a.usuario_id = u.id
+          ORDER BY a.fecha DESC";
+
+$result = mysqli_query($conn, $query);
+
+while ($row = mysqli_fetch_assoc($result)) {
+    $data[] = $row;
+}
+```
+
+### Export Table Generation
+
+```php
+echo "<table border='1'>";
+echo "<tr>
+        <th>Practicante ID</th>
+        <th>Fecha</th>
+        <th>Hora de Entrada</th>
+        <th>Hora de Salida</th>
+        <th>Estado</th>
+      </tr>";
+
+foreach ($data as $fila) {
+    $hora_entrada = $fila['hora_entrada'] ?? null;
+    $hora_salida = $fila['hora_salida'] ?? null;
+    
+    $estado = (!empty($hora_entrada) && !empty($hora_salida)) 
+              ? 'Completa' : 'Incompleta';
+    
+    echo "<tr>";
+    echo "<td>{$fila['nombre']}</td>";
+    echo "<td>{$fila['fecha']}</td>";
+    echo "<td>{$hora_entrada}</td>";
+    echo "<td>{$hora_salida}</td>";
+    echo "<td>{$estado}</td>";
+    echo "</tr>";
+}
+echo "</table>";
+```
+
+<Warning>
+The export generates an HTML table with Excel MIME type. For true XLSX format, consider using a library like PHPSpreadsheet:
+
+```php
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+
+$spreadsheet = new Spreadsheet();
+$sheet = $spreadsheet->getActiveSheet();
+// Add data
+$writer = new Xlsx($spreadsheet);
+$writer->save('asistencia.xlsx');
+```
+</Warning>
+
+## Report Access Page
+
+The admin reports page (`admin/reportes.php`) provides a dedicated interface for viewing reports.
+
+### Page Structure
+
+<Tabs>
+  <Tab title="Layout">
+    Three card sections displaying different report types:
+    
+    ```html
+    <div class="row">
+        <div class="col-md-4">
+            <!-- Asistencias por Mes card -->
+        </div>
+        <div class="col-md-4">
+            <!-- Asistencias por Practicante card -->
+        </div>
+        <div class="col-md-4">
+            <!-- Asistencias Totales card -->
+        </div>
+    </div>
+    ```
+  </Tab>
+  
+  <Tab title="Navigation">
+    Sidebar navigation includes:
+    - Dashboard
+    - Practicantes
+    - Reportes (current page)
+    - Cerrar Sesión
+  </Tab>
+  
+  <Tab title="Export Button">
+    Top-right corner includes an **Export** button:
+    
+    ```html
+    <button class="btn btn-primary">
+        <i class="fas fa-download"></i> Exportar
+    </button>
+    ```
+    
+    Note: This button is present but not fully implemented in the current code.
+  </Tab>
+</Tabs>
+
+## Analyzing Exported Data
+
+Once you've exported attendance data, you can perform various analyses.
+
+### Basic Excel Analysis
+
+<Accordion title="Calculate Attendance Rate">
+  **Formula:** `(Complete Records / Total Records) * 100`
+  
+  In Excel:
+  1. Count complete records: `=COUNTIF(E:E,"Completa")`
+  2. Count total records: `=COUNTA(E:E)-1` (minus header)
+  3. Calculate percentage: `=(A1/A2)*100`
+</Accordion>
+
+<Accordion title="Find Average Hours Worked">
+  Calculate time difference between entrada and salida:
+  
+  ```excel
+  =IF(D2<>"", (D2-C2)*24, "")
+  ```
+  
+  Then average the results:
+  ```excel
+  =AVERAGE(F:F)
+  ```
+</Accordion>
+
+<Accordion title="Identify Late Arrivals">
+  Flag entries after a threshold (e.g., 9:00 AM):
+  
+  ```excel
+  =IF(C2>TIME(9,0,0), "Late", "On Time")
+  ```
+</Accordion>
+
+<Accordion title="Count Days Present by Intern">
+  Use a pivot table:
+  
+  1. Select all data
+  2. Insert → Pivot Table
+  3. Rows: Practicante ID
+  4. Values: Count of Fecha
+</Accordion>
+
+### Advanced Analysis
+
+<Steps>
+  <Step title="Import to Database Tool">
+    Import the CSV into a database tool (MySQL Workbench, PostgreSQL, etc.) for SQL analysis.
+  </Step>
+  
+  <Step title="Run Complex Queries">
+    ```sql
+    -- Find interns with >90% complete attendance
+    SELECT nombre, 
+           COUNT(*) as total_records,
+           SUM(CASE WHEN estado = 'Completa' THEN 1 ELSE 0 END) as complete,
+           (SUM(CASE WHEN estado = 'Completa' THEN 1 ELSE 0 END) / COUNT(*)) * 100 as completion_rate
+    FROM attendance_export
+    GROUP BY nombre
+    HAVING completion_rate > 90;
+    ```
+  </Step>
+  
+  <Step title="Visualize with BI Tools">
+    Import into Tableau, Power BI, or Google Data Studio for interactive dashboards.
+  </Step>
+</Steps>
+
+## Custom Report Development
+
+Extend the reporting system with custom reports.
+
+### Adding a New Report Card
+
+<Steps>
+  <Step title="Edit reportes.php">
+    Add a new column to the row:
+    
+    ```html
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">Your Report Title</div>
+            <div class="card-body">
+                <?php
+                // Your query here
+                ?>
+            </div>
+        </div>
+    </div>
+    ```
+  </Step>
+  
+  <Step title="Write the Query">
+    Example - Incomplete records count:
+    
+    ```php
+    $query = "SELECT COUNT(*) as total 
+              FROM asistencia 
+              WHERE hora_salida IS NULL";
+    $result = $conn->query($query);
+    $incompletas = $result->fetch_assoc()['total'];
+    echo "<p>Asistencias Incompletas: {$incompletas}</p>";
+    ```
+  </Step>
+  
+  <Step title="Style the Output">
+    Apply Bootstrap classes for consistent styling.
+  </Step>
+</Steps>
+
+### Example Custom Reports
+
+<Accordion title="This Week's Attendance">
+  ```php
+  $query = "SELECT COUNT(*) as total 
+            FROM asistencia 
+            WHERE YEARWEEK(fecha, 1) = YEARWEEK(CURDATE(), 1)";
+  $result = $conn->query($query);
+  $this_week = $result->fetch_assoc()['total'];
+  echo "<p>Asistencias esta semana: {$this_week}</p>";
+  ```
+</Accordion>
+
+<Accordion title="Average Entry Time">
+  ```php
+  $query = "SELECT SEC_TO_TIME(AVG(TIME_TO_SEC(hora_entrada))) as promedio 
+            FROM asistencia";
+  $result = $conn->query($query);
+  $avg_entry = $result->fetch_assoc()['promedio'];
+  echo "<p>Hora promedio de entrada: {$avg_entry}</p>";
+  ```
+</Accordion>
+
+<Accordion title="Interns Never Absent">
+  ```php
+  $query = "SELECT u.nombre, COUNT(a.id) as dias 
+            FROM usuarios u 
+            JOIN asistencia a ON u.id = a.usuario_id 
+            WHERE u.rol_id = 3 
+            GROUP BY u.id 
+            HAVING COUNT(DISTINCT a.fecha) >= 30";
+  $result = $conn->query($query);
+  echo "<ul>";
+  while ($row = $result->fetch_assoc()) {
+      echo "<li>{$row['nombre']}: {$row['dias']} días</li>";
+  }
+  echo "</ul>";
+  ```
+</Accordion>
+
+<Accordion title="Completion Rate by Month">
+  ```php
+  $query = "SELECT 
+                MONTH(fecha) as mes,
+                COUNT(*) as total,
+                SUM(CASE WHEN hora_salida IS NOT NULL THEN 1 ELSE 0 END) as completas,
+                (SUM(CASE WHEN hora_salida IS NOT NULL THEN 1 ELSE 0 END) / COUNT(*)) * 100 as tasa
+            FROM asistencia 
+            GROUP BY MONTH(fecha)";
+  $result = $conn->query($query);
+  while ($row = $result->fetch_assoc()) {
+      echo "<p>Mes {$row['mes']}: {$row['tasa']}% completas</p>";
+  }
+  ```
+</Accordion>
+
+## Scheduled Reports
+
+Automate report generation and distribution.
+
+### Setting Up Email Reports
+
+<Steps>
+  <Step title="Create Report Script">
+    Create a PHP script that generates the report:
+    
+    ```php
+    <?php
+    require_once 'db.php';
+    
+    // Generate report
+    $query = "SELECT COUNT(*) as total FROM asistencia 
+              WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)";
+    $result = $conn->query($query);
+    $weekly_count = $result->fetch_assoc()['total'];
+    
+    // Email content
+    $message = "Weekly Attendance Report\n\n";
+    $message .= "Total attendance records this week: {$weekly_count}\n";
+    
+    // Send email
+    mail('supervisor@municipality.gov', 
+         'Weekly Attendance Report', 
+         $message);
+    ?>
+    ```
+  </Step>
+  
+  <Step title="Set Up Cron Job">
+    Schedule the script to run weekly:
+    
+    ```bash
+    0 8 * * 1 /usr/bin/php /path/to/weekly_report.php
+    ```
+    
+    Runs every Monday at 8:00 AM.
+  </Step>
+  
+  <Step title="Test the Script">
+    Run manually first to verify:
+    
+    ```bash
+    php /path/to/weekly_report.php
+    ```
+  </Step>
+</Steps>
+
+### Automated Export
+
+Generate and save exports automatically:
+
+```php
+<?php
+require_once 'db.php';
+
+$query = "SELECT u.nombre, a.fecha, a.hora_entrada, a.hora_salida
+          FROM asistencia a
+          JOIN usuarios u ON a.usuario_id = u.id
+          WHERE MONTH(a.fecha) = MONTH(CURDATE())
+          ORDER BY a.fecha DESC";
+
+$result = mysqli_query($conn, $query);
+
+$filename = 'exports/asistencia_' . date('Y-m') . '.csv';
+$file = fopen($filename, 'w');
+
+// CSV header
+fputcsv($file, ['Nombre', 'Fecha', 'Hora Entrada', 'Hora Salida']);
+
+// Data rows
+while ($row = mysqli_fetch_assoc($result)) {
+    fputcsv($file, $row);
+}
+
+fclose($file);
+echo "Export saved: {$filename}\n";
+?>
+```
+
+Schedule monthly with cron:
+```bash
+0 0 1 * * /usr/bin/php /path/to/monthly_export.php
+```
+
+## Report Best Practices
+
+<Accordion title="Regular Review Schedule">
+  Establish consistent reporting cadence:
+  - Daily: Dashboard checks
+  - Weekly: Supervisor exports and review
+  - Monthly: Administrative reports and analysis
+  - Quarterly: Trend analysis and planning
+</Accordion>
+
+<Accordion title="Data Quality Checks">
+  Before generating reports:
+  - Verify no duplicate records
+  - Check for orphaned records (deleted users)
+  - Confirm timestamp accuracy
+  - Validate status calculations
+</Accordion>
+
+<Accordion title="Secure Report Storage">
+  - Store exports in secure, access-controlled location
+  - Use consistent naming convention (YYYY-MM-DD format)
+  - Maintain version control
+  - Follow data retention policies
+</Accordion>
+
+<Accordion title="Actionable Insights">
+  Focus reports on metrics that drive decisions:
+  - Attendance trends → Resource planning
+  - Completion rates → Process improvements
+  - Individual performance → Coaching opportunities
+  - Time patterns → Schedule optimization
+</Accordion>
+
+## Troubleshooting Reports
+
+### Export File Won't Download
+
+<Warning>
+Check for output before headers:
+
+```php
+// WRONG - whitespace before PHP tag
+
+<?php
+header("Content-Type: application/vnd.ms-excel");
+
+// CORRECT - no whitespace
+<?php
+header("Content-Type: application/vnd.ms-excel");
+```
+
+Any output before headers will cause the download to fail.
+</Warning>
+
+### Report Shows No Data
+
+Verify:
+1. Database has records: `SELECT COUNT(*) FROM asistencia`
+2. Query syntax is correct
+3. Table joins are valid
+4. Date filters aren't too restrictive
+
+### Incorrect Counts
+
+Check:
+- Are you using COUNT(*) vs COUNT(column)?
+- Do NULL values affect your counts?
+- Are GROUP BY clauses correct?
+- Is there duplicate data?
+
+### Export File is Corrupted
+
+Ensure:
+- Proper character encoding (UTF-8)
+- No binary data in text fields
+- Escaped special characters in CSV
+- Valid MIME type in headers
+
+## Advanced Reporting Features
+
+### Implement Report Filters
+
+Add date range filtering:
+
+```php
+$start_date = $_POST['start_date'] ?? date('Y-m-01');
+$end_date = $_POST['end_date'] ?? date('Y-m-d');
+
+$query = "SELECT * FROM asistencia 
+          WHERE fecha BETWEEN ? AND ?";
+$stmt = $conn->prepare($query);
+$stmt->bind_param("ss", $start_date, $end_date);
+```
+
+### Add Chart Visualization
+
+Integrate Chart.js for visual reports:
+
+```javascript
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<canvas id="attendanceChart"></canvas>
+<script>
+const ctx = document.getElementById('attendanceChart');
+new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: <?php echo json_encode($months); ?>,
+        datasets: [{
+            label: 'Asistencias por Mes',
+            data: <?php echo json_encode($counts); ?>
+        }]
+    }
+});
+</script>
+```
+
+### Create PDF Reports
+
+Generate PDF reports with TCPDF or FPDF:
+
+```php
+require_once('tcpdf/tcpdf.php');
+
+$pdf = new TCPDF();
+$pdf->AddPage();
+$pdf->SetFont('helvetica', '', 12);
+$pdf->Write(0, 'Reporte de Asistencias');
+$pdf->Output('reporte.pdf', 'D');
+```

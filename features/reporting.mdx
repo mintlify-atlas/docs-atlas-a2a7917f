@@ -1,0 +1,561 @@
+---
+title: Reporting
+description: Analytics and reporting features for attendance data in Asistencias
+icon: chart-line
+---
+
+## Overview
+
+The Asistencias reporting system provides administrators with insights into attendance patterns, monthly statistics, and per-practicante metrics. The system includes both on-screen reports and Excel export functionality.
+
+## Report Types
+
+<CardGroup cols={3}>
+  <Card title="Monthly Reports" icon="calendar" color="#4CAF50">
+    Attendance counts grouped by month
+  </Card>
+  <Card title="Per-Practicante" icon="user-chart" color="#2196F3">
+    Individual attendance totals
+  </Card>
+  <Card title="Total Statistics" icon="chart-bar" color="#FF9800">
+    System-wide attendance metrics
+  </Card>
+</CardGroup>
+
+## Admin Reports Dashboard
+
+**Location**: `admin/reportes.php`
+
+### Access Control
+
+```php
+session_start();  
+if (!isset($_SESSION['usuario_id']) || $_SESSION['rol_id'] != 1) {     
+    header("Location: ../login.php");     
+    exit(); 
+} 
+require_once '../db.php';
+```
+
+<Note>
+  Reports are only accessible to administrators (rol_id = 1). Supervisors do not have direct access to the reports page.
+</Note>
+
+### Reports Layout
+
+The reports page displays three main report cards:
+
+```html
+<div class="row">
+    <div class="col-md-4">
+        <!-- Monthly Attendance Report -->
+    </div>
+    <div class="col-md-4">
+        <!-- Per-Practicante Report -->
+    </div>
+    <div class="col-md-4">
+        <!-- Total Attendance Report -->
+    </div>
+</div>
+```
+
+## Monthly Attendance Report
+
+### Query Implementation
+
+<Tabs>
+  <Tab title="SQL Query">
+    ```php
+    <div class="card">
+        <div class="card-header">Asistencias por Mes</div>
+        <div class="card-body">
+            <?php
+            $query = "SELECT MONTH(fecha) as mes, COUNT(*) as total 
+                      FROM asistencia 
+                      GROUP BY MONTH(fecha)";
+            $result = $conn->query($query);
+            while($reporte = $result->fetch_assoc()) {
+                echo "<p>Mes {$reporte['mes']}: {$reporte['total']} asistencias</p>";
+            }
+            ?>
+        </div>
+    </div>
+    ```
+
+    This query:
+    - Uses `MONTH(fecha)` to extract month number (1-12)
+    - Groups attendance records by month
+    - Counts total records per month
+  </Tab>
+
+  <Tab title="Output Format">
+    The report displays month numbers with totals:
+
+    ```
+    Mes 1: 45 asistencias
+    Mes 2: 52 asistencias
+    Mes 3: 38 asistencias
+    ```
+
+    <Note>
+      Month numbers are displayed instead of names (1 = January, 2 = February, etc.). Consider formatting for better readability:
+      
+      ```php
+      $meses = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+      echo "<p>{$meses[$reporte['mes']]}: {$reporte['total']} asistencias</p>";
+      ```
+    </Note>
+  </Tab>
+
+  <Tab title="Limitations">
+    **Current Limitations:**
+    
+    - No year filtering (shows all months across all years combined)
+    - No distinction between complete/incomplete attendance
+    - No date range selection
+    - Months with zero attendance don't appear
+
+    **Enhanced Query:**
+    ```sql
+    SELECT 
+        YEAR(fecha) as año,
+        MONTH(fecha) as mes,
+        COUNT(*) as total,
+        SUM(CASE WHEN hora_salida IS NOT NULL THEN 1 ELSE 0 END) as completas,
+        SUM(CASE WHEN hora_salida IS NULL THEN 1 ELSE 0 END) as incompletas
+    FROM asistencia 
+    WHERE YEAR(fecha) = YEAR(CURDATE())
+    GROUP BY YEAR(fecha), MONTH(fecha)
+    ORDER BY año DESC, mes DESC;
+    ```
+  </Tab>
+</Tabs>
+
+## Per-Practicante Attendance Report
+
+### Query Implementation
+
+<Tabs>
+  <Tab title="SQL Query">
+    ```php
+    <div class="card">
+        <div class="card-header">Asistencias por Practicante</div>
+        <div class="card-body">
+            <?php
+            $query = "SELECT p.nombre, COUNT(a.id) as total 
+                      FROM practicantes p 
+                      LEFT JOIN asistencia a ON p.id = a.practicante_id 
+                      GROUP BY p.id";
+            $result = $conn->query($query);
+            while($reporte = $result->fetch_assoc()) {
+                echo "<p>{$reporte['nombre']}: {$reporte['total']} asistencias</p>";
+            }
+            ?>
+        </div>
+    </div>
+    ```
+
+    This query:
+    - Joins `practicantes` table with `asistencia` table
+    - Uses LEFT JOIN to include practicantes with zero attendance
+    - Groups by practicante ID
+    - Counts attendance records per practicante
+  </Tab>
+
+  <Tab title="Output Format">
+    ```
+    Juan Pérez: 23 asistencias
+    María García: 28 asistencias
+    Carlos Rodríguez: 19 asistencias
+    ```
+  </Tab>
+
+  <Tab title="Data Inconsistency">
+    <Warning>
+      **Schema Mismatch**: The query references the `practicantes` table, but the actual implementation stores practicante data in the `usuarios` table with `rol_id = 3`.
+
+      The attendance table uses `usuario_id` as the foreign key, not `practicante_id`.
+
+      **Corrected Query:**
+      ```sql
+      SELECT u.nombre, COUNT(a.id) as total 
+      FROM usuarios u 
+      LEFT JOIN asistencia a ON u.id = a.usuario_id 
+      WHERE u.rol_id = 3
+      GROUP BY u.id
+      ORDER BY total DESC;
+      ```
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Total Attendance Report
+
+### Query Implementation
+
+<Tabs>
+  <Tab title="Basic Count">
+    ```php
+    <div class="card">
+        <div class="card-header">Asistencias Totales</div>
+        <div class="card-body">
+            <?php
+            $query = "SELECT COUNT(*) as total FROM asistencia";
+            $result = $conn->query($query);
+            $total_asistencias = $result->fetch_assoc()['total'];
+            echo "<p>Total de asistencias: {$total_asistencias}</p>";
+            ?>
+        </div>
+    </div>
+    ```
+
+    Simple count of all attendance records across all time.
+  </Tab>
+
+  <Tab title="Enhanced Statistics">
+    For more meaningful statistics, consider:
+
+    ```php
+    // Total records
+    $total = $conn->query("SELECT COUNT(*) as c FROM asistencia")
+                  ->fetch_assoc()['c'];
+
+    // Complete attendance (both entrada and salida)
+    $completas = $conn->query(
+        "SELECT COUNT(*) as c FROM asistencia 
+         WHERE hora_entrada IS NOT NULL AND hora_salida IS NOT NULL"
+    )->fetch_assoc()['c'];
+
+    // Incomplete attendance (missing salida)
+    $incompletas = $conn->query(
+        "SELECT COUNT(*) as c FROM asistencia 
+         WHERE hora_salida IS NULL"
+    )->fetch_assoc()['c'];
+
+    // Average attendance per day
+    $promedio = $conn->query(
+        "SELECT AVG(daily_count) as promedio FROM (
+            SELECT COUNT(*) as daily_count 
+            FROM asistencia 
+            GROUP BY fecha
+        ) as daily_stats"
+    )->fetch_assoc()['promedio'];
+
+    echo "<p>Total: {$total}</p>";
+    echo "<p>Completas: {$completas}</p>";
+    echo "<p>Incompletas: {$incompletas}</p>";
+    echo "<p>Promedio diario: " . round($promedio, 1) . "</p>";
+    ```
+  </Tab>
+</Tabs>
+
+## Excel Export Functionality
+
+### Export Location
+
+**File**: `admin/asistencias.php`
+
+The Excel export is integrated into the attendance management page, not the reports page.
+
+### Export Implementation
+
+<Tabs>
+  <Tab title="Export Button">
+    ```html
+    <div class="d-flex justify-content-between ...">
+        <h1 class="h2">Registro de Asistencias</h1>
+        <div>
+            <a href="../dasboards/admin_dashboard.php" 
+               class="btn btn-outline-success">Volver al Inicio</a>
+            <form method="post" style="display:inline;">
+                <button type="submit" name="exportar" 
+                        class="btn btn-outline-primary">
+                    Exportar a XLSX
+                </button>
+            </form>
+        </div>           
+    </div>
+    ```
+  </Tab>
+
+  <Tab title="Export Query">
+    ```php
+    if (isset($_POST['exportar'])) {
+        $data = array();
+        $query = "SELECT u.nombre, a.fecha, a.hora_entrada, a.hora_salida,
+                  CASE 
+                      WHEN a.hora_entrada IS NOT NULL AND a.hora_salida IS NOT NULL 
+                      THEN 'Completada' 
+                      ELSE 'Incompleta' 
+                  END AS estado
+                  FROM asistencia a
+                  JOIN usuarios u ON a.usuario_id = u.id
+                  ORDER BY a.fecha DESC;";
+
+        $result = mysqli_query($conn, $query);
+
+        while ($row = mysqli_fetch_assoc($result)) {
+            $data[] = $row;
+        }
+    ```
+
+    The query includes:
+    - User name from `usuarios` table
+    - Date, entry time, and exit time
+    - Calculated status using CASE statement
+    - Ordered by date (newest first)
+  </Tab>
+
+  <Tab title="Excel Generation">
+    ```php
+        // Set Excel file headers
+        header("Content-Type: application/vnd.ms-excel");
+        header("Content-Disposition: attachment; filename=asistencia.xls");
+        header("Pragma: no-cache");
+        header("Expires: 0");
+
+        // Generate HTML table
+        echo "<table border='1'>";
+        echo "<tr>
+                <th>Practicante ID</th>
+                <th>Fecha</th>
+                <th>Hora de Entrada</th>
+                <th>Hora de Salida</th>
+                <th>Estado</th>
+              </tr>";
+
+        foreach ($data as $fila) {
+            $hora_entrada = $fila['hora_entrada'] ?? null;
+            $hora_salida = $fila['hora_salida'] ?? null;
+            $estado = (!empty($hora_entrada) && !empty($hora_salida)) 
+                      ? 'Completa' : 'Incompleta';
+
+            echo "<tr>";
+            echo "<td>{$fila['nombre']}</td>";
+            echo "<td>{$fila['fecha']}</td>";
+            echo "<td>{$hora_entrada}</td>";
+            echo "<td>{$hora_salida}</td>";
+            echo "<td>{$estado}</td>";
+            echo "</tr>";
+        }
+        echo "</table>";
+
+        exit;
+    }
+    ```
+  </Tab>
+
+  <Tab title="File Details">
+    **Export Characteristics:**
+    
+    - **Filename**: `asistencia.xls`
+    - **Format**: HTML table with Excel MIME type
+    - **Headers**: Practicante ID, Fecha, Hora de Entrada, Hora de Salida, Estado
+    - **Content**: All attendance records, ordered by date (descending)
+    
+    <Note>
+      **Note on Column Header**: The first column header says "Practicante ID" but actually contains the practicante's name, not their ID.
+    </Note>
+
+    <Warning>
+      **Format Limitation**: The export uses HTML table format with Excel MIME type. While this works for basic viewing in Excel, it has limitations:
+      
+      - No native Excel formatting
+      - No formulas or calculations
+      - Date/time values stored as text
+      - Large files may have performance issues
+      
+      Consider using a library like PHPSpreadsheet for production:
+      ```php
+      require 'vendor/autoload.php';
+      use PhpOffice\PhpSpreadsheet\Spreadsheet;
+      use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+      
+      $spreadsheet = new Spreadsheet();
+      $sheet = $spreadsheet->getActiveSheet();
+      // ... populate cells ...
+      $writer = new Xlsx($spreadsheet);
+      $writer->save('asistencia.xlsx');
+      ```
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Dashboard Reporting Statistics
+
+In addition to the dedicated reports page, dashboards display real-time statistics:
+
+### Admin Dashboard Stats
+
+```php
+// Total users
+$result = $conn->query("SELECT COUNT(*) as total FROM usuarios");
+
+// Total practicantes
+$result = $conn->query(
+    "SELECT COUNT(*) as total FROM usuarios WHERE rol_id = 3"
+);
+
+// Today's attendance
+$result = $conn->query(
+    "SELECT COUNT(*) as total FROM asistencia WHERE fecha = CURDATE()"
+);
+```
+
+### Supervisor Dashboard Stats
+
+```php
+// Active practicantes
+$result = $conn->query("SELECT COUNT(*) as total FROM practicantes");
+
+// Today's attendance
+$result = $conn->query(
+    "SELECT COUNT(*) as total FROM asistencia WHERE fecha = CURDATE()"
+);
+```
+
+## Common Reporting Queries
+
+<Accordion title="Attendance by Date Range">
+  ```sql
+  SELECT 
+      DATE(fecha) as fecha,
+      COUNT(*) as total_registros,
+      SUM(CASE WHEN hora_salida IS NOT NULL THEN 1 ELSE 0 END) as completas
+  FROM asistencia
+  WHERE fecha BETWEEN '2026-01-01' AND '2026-03-31'
+  GROUP BY DATE(fecha)
+  ORDER BY fecha DESC;
+  ```
+</Accordion>
+
+<Accordion title="Attendance Rate by Practicante">
+  ```sql
+  SELECT 
+      u.nombre,
+      COUNT(a.id) as dias_asistidos,
+      SUM(CASE WHEN a.hora_salida IS NOT NULL THEN 1 ELSE 0 END) as dias_completos,
+      ROUND(100.0 * SUM(CASE WHEN a.hora_salida IS NOT NULL THEN 1 ELSE 0 END) / COUNT(a.id), 2) as porcentaje_completo
+  FROM usuarios u
+  LEFT JOIN asistencia a ON u.id = a.usuario_id
+  WHERE u.rol_id = 3
+  GROUP BY u.id, u.nombre
+  ORDER BY dias_asistidos DESC;
+  ```
+</Accordion>
+
+<Accordion title="Late Arrivals (After 9 AM)">
+  ```sql
+  SELECT 
+      u.nombre,
+      a.fecha,
+      a.hora_entrada,
+      CASE 
+          WHEN TIME(a.hora_entrada) > '09:00:00' THEN 'Tarde'
+          ELSE 'A tiempo'
+      END as estado
+  FROM asistencia a
+  JOIN usuarios u ON a.usuario_id = u.id
+  WHERE TIME(a.hora_entrada) > '09:00:00'
+  ORDER BY a.fecha DESC, a.hora_entrada DESC;
+  ```
+</Accordion>
+
+<Accordion title="Incomplete Attendance Report">
+  ```sql
+  SELECT 
+      u.nombre,
+      a.fecha,
+      a.hora_entrada,
+      'Sin registro de salida' as observacion
+  FROM asistencia a
+  JOIN usuarios u ON a.usuario_id = u.id
+  WHERE a.hora_salida IS NULL
+  ORDER BY a.fecha DESC;
+  ```
+</Accordion>
+
+<Accordion title="Monthly Summary with Averages">
+  ```sql
+  SELECT 
+      YEAR(fecha) as año,
+      MONTH(fecha) as mes,
+      COUNT(DISTINCT usuario_id) as practicantes_unicos,
+      COUNT(*) as total_registros,
+      AVG(CASE 
+          WHEN hora_salida IS NOT NULL 
+          THEN TIMESTAMPDIFF(HOUR, hora_entrada, hora_salida) 
+          ELSE NULL 
+      END) as horas_promedio
+  FROM asistencia
+  GROUP BY YEAR(fecha), MONTH(fecha)
+  ORDER BY año DESC, mes DESC;
+  ```
+</Accordion>
+
+## Report Enhancements
+
+<CardGroup cols={2}>
+  <Card title="Date Range Filters" icon="calendar-range">
+    Add form inputs to filter reports by start and end dates
+  </Card>
+  <Card title="Visual Charts" icon="chart-pie">
+    Integrate Chart.js or similar for graphical representations
+  </Card>
+  <Card title="PDF Export" icon="file-pdf">
+    Use libraries like TCPDF or DomPDF for formatted PDF reports
+  </Card>
+  <Card title="Scheduled Reports" icon="clock">
+    Implement cron jobs to email reports automatically
+  </Card>
+</CardGroup>
+
+### Chart.js Integration Example
+
+```html
+<canvas id="monthlyChart" width="400" height="200"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const ctx = document.getElementById('monthlyChart').getContext('2d');
+const chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: <?php echo json_encode($month_labels); ?>,
+        datasets: [{
+            label: 'Asistencias',
+            data: <?php echo json_encode($month_totals); ?>,
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            borderColor: 'rgba(75, 192, 192, 1)',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+});
+</script>
+```
+
+## Best Practices
+
+1. **Add Date Filters**: Allow users to select date ranges for more relevant reports
+
+2. **Cache Report Data**: For expensive queries, cache results and refresh periodically
+
+3. **Paginate Large Reports**: Don't load all records at once for better performance
+
+4. **Export to Multiple Formats**: Support CSV, Excel, and PDF formats
+
+5. **Add Report Scheduling**: Email reports automatically on a schedule
+
+6. **Include Trend Analysis**: Show week-over-week or month-over-month comparisons
+
+7. **Visualize Data**: Use charts and graphs for better insights
+
+8. **Fix Schema References**: Update queries to use correct table relationships

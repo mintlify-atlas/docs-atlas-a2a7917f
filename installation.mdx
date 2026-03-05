@@ -1,0 +1,572 @@
+---
+title: 'Installation Guide'
+description: 'Complete installation instructions for the Asistencias attendance tracking system'
+---
+
+## System Overview
+
+Asistencias is a PHP-based attendance tracking system for municipal interns built with a traditional LAMP/WAMP stack architecture. This guide will walk you through the complete installation process.
+
+## Server Requirements
+
+Before installing Asistencias, ensure your server meets these requirements:
+
+<CardGroup cols={2}>
+  <Card title="Web Server" icon="server">
+    - Apache 2.4+ or Nginx
+    - PHP 7.4 or higher
+    - mod_rewrite enabled (Apache)
+  </Card>
+  
+  <Card title="Database" icon="database">
+    - MySQL 5.7+ or MariaDB 10.3+
+    - mysqli PHP extension enabled
+  </Card>
+  
+  <Card title="PHP Extensions" icon="puzzle-piece">
+    - mysqli
+    - session
+    - mbstring
+  </Card>
+  
+  <Card title="Other" icon="tools">
+    - Write permissions for session directory
+    - At least 50MB disk space
+  </Card>
+</CardGroup>
+
+<Info>
+  The system has been tested on XAMPP, WAMP, and standard LAMP configurations. For development, XAMPP or WAMP are recommended for ease of setup.
+</Info>
+
+## Installation Steps
+
+<Steps>
+  <Step title="Download and Extract">
+    1. Download the Asistencias source code
+    2. Extract the files to your web server's document root:
+       - **XAMPP**: `C:\xampp\htdocs\asistencias\` (Windows) or `/opt/lampp/htdocs/asistencias/` (Linux)
+       - **WAMP**: `C:\wamp64\www\asistencias\`
+       - **Linux**: `/var/www/html/asistencias/`
+    
+    The directory structure should look like this:
+    
+    ```
+    asistencias/
+    ├── admin/
+    │   ├── asistencias.php
+    │   ├── editar_usuario.php
+    │   ├── eliminar_usuario.php
+    │   ├── guardar_usuario.php
+    │   ├── perfil.php
+    │   ├── practicantes.php
+    │   ├── reportes.php
+    │   └── usuarios.php
+    ├── css/
+    ├── dasboards/
+    │   ├── admin_dashboard.php
+    │   ├── practicante_dashboard.php
+    │   └── supervisor_dashboard.php
+    ├── img/
+    ├── practicantes/
+    ├── supervisor/
+    ├── bd.sql
+    ├── db.php
+    ├── index.html
+    ├── login.php
+    ├── logout.php
+    └── registra_sesion.php
+    ```
+  </Step>
+
+  <Step title="Create the Database">
+    The system requires a MySQL database named `asistencia_practicantes`. You can create it in two ways:
+    
+    ### Option 1: Using phpMyAdmin
+    
+    1. Open phpMyAdmin (usually at `http://localhost/phpmyadmin`)
+    2. Click "New" in the left sidebar
+    3. Enter database name: `asistencia_practicantes`
+    4. Select collation: `utf8mb4_general_ci`
+    5. Click "Create"
+    
+    ### Option 2: Using MySQL Command Line
+    
+    ```sql
+    CREATE DATABASE asistencia_practicantes;
+    ```
+    
+    <Warning>
+      The database name must be exactly `asistencia_practicantes` as specified in the configuration, or you'll need to update `db.php` accordingly.
+    </Warning>
+  </Step>
+
+  <Step title="Import Database Schema">
+    Import the provided SQL schema to create all necessary tables and default data.
+    
+    ### Using phpMyAdmin:
+    
+    1. Select the `asistencia_practicantes` database
+    2. Click the "Import" tab
+    3. Click "Choose File" and select `bd.sql`
+    4. Click "Go" to execute
+    
+    ### Using MySQL Command Line:
+    
+    ```bash
+    mysql -u root -p asistencia_practicantes < /path/to/bd.sql
+    ```
+    
+    This will create the following tables:
+    
+    <Tabs>
+      <Tab title="practicantes">
+        Stores information about interns:
+        
+        ```sql bd.sql:5-10
+        CREATE TABLE practicantes (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            nombre VARCHAR(100) NOT NULL,
+            correo VARCHAR(100) NOT NULL UNIQUE,
+            fecha_ingreso DATE NOT NULL
+        );
+        ```
+        
+        - `id`: Unique identifier
+        - `nombre`: Full name
+        - `correo`: Email address (unique)
+        - `fecha_ingreso`: Start date
+      </Tab>
+      
+      <Tab title="asistencia">
+        Records attendance check-ins and check-outs:
+        
+        ```sql bd.sql:12-19
+        CREATE TABLE asistencia (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            practicante_id INT NOT NULL,
+            fecha DATE NOT NULL,
+            hora_entrada TIME NOT NULL,
+            hora_salida TIME NULL,
+            FOREIGN KEY (practicante_id) REFERENCES practicantes(id)
+        );
+        ```
+        
+        - `practicante_id`: References intern
+        - `fecha`: Attendance date
+        - `hora_entrada`: Check-in time
+        - `hora_salida`: Check-out time (nullable)
+      </Tab>
+      
+      <Tab title="roles">
+        Defines user roles in the system:
+        
+        ```sql bd.sql:21-29
+        CREATE TABLE roles (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            nombre VARCHAR(50) UNIQUE NOT NULL
+        );
+
+        INSERT INTO roles (nombre) VALUES 
+            ('admin'),
+            ('supervisor'),
+            ('practicante');
+        ```
+        
+        Three default roles:
+        - **admin** (id: 1): Full system access
+        - **supervisor** (id: 2): Monitoring access
+        - **practicante** (id: 3): Limited intern access
+      </Tab>
+      
+      <Tab title="usuarios">
+        Manages system users:
+        
+        ```sql bd.sql:31-39
+        CREATE TABLE usuarios (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            nombre VARCHAR(100) NOT NULL,
+            correo VARCHAR(100) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            rol_id INT,
+            fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (rol_id) REFERENCES roles(id)
+        );
+        ```
+        
+        - `password_hash`: Bcrypt-hashed password
+        - `rol_id`: References roles table
+        - `fecha_registro`: Auto-generated timestamp
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Configure Database Connection">
+    Update the database configuration file `db.php` with your MySQL credentials.
+    
+    The default configuration is:
+    
+    ```php db.php:2-5
+    $host = "localhost";
+    $user = "root";
+    $password = "";
+    $db = "asistencia_practicantes";
+    ```
+    
+    <CodeGroup>
+      ```php Default (XAMPP/WAMP)
+      <?php
+      $host = "localhost";
+      $user = "root";
+      $password = "";  // Empty password for XAMPP/WAMP
+      $db = "asistencia_practicantes";
+      
+      $conn = new mysqli($host, $user, $password, $db);
+      ```
+      
+      ```php Production
+      <?php
+      $host = "localhost";
+      $user = "asistencias_user";
+      $password = "your_secure_password_here";
+      $db = "asistencia_practicantes";
+      
+      $conn = new mysqli($host, $user, $password, $db);
+      ```
+      
+      ```php Remote Database
+      <?php
+      $host = "db.example.com";
+      $user = "remote_user";
+      $password = "secure_password";
+      $db = "asistencia_practicantes";
+      
+      $conn = new mysqli($host, $user, $password, $db);
+      ```
+    </CodeGroup>
+    
+    <Warning>
+      **For Production**: Never use the root user or an empty password in production. Create a dedicated MySQL user with limited privileges:
+      
+      ```sql
+      CREATE USER 'asistencias_user'@'localhost' IDENTIFIED BY 'secure_password';
+      GRANT SELECT, INSERT, UPDATE, DELETE ON asistencia_practicantes.* TO 'asistencias_user'@'localhost';
+      FLUSH PRIVILEGES;
+      ```
+    </Warning>
+    
+    The connection includes built-in error handling and UTF-8 support:
+    
+    ```php db.php:7-13
+    $conn = new mysqli($host, $user, $password, $db);
+
+    if ($conn->connect_error) {
+        die("Connection failed: " . $conn->connect_error);
+    }
+
+    $conn->set_charset("utf8mb4");
+    ```
+  </Step>
+
+  <Step title="Set File Permissions">
+    Ensure proper file permissions for security and functionality:
+    
+    ### On Linux:
+    
+    ```bash
+    # Set ownership to web server user
+    sudo chown -R www-data:www-data /var/www/html/asistencias
+    
+    # Set directory permissions
+    sudo find /var/www/html/asistencias -type d -exec chmod 755 {} \;
+    
+    # Set file permissions
+    sudo find /var/www/html/asistencias -type f -exec chmod 644 {} \;
+    
+    # Restrict db.php permissions
+    sudo chmod 640 /var/www/html/asistencias/db.php
+    ```
+    
+    ### On Windows (XAMPP/WAMP):
+    
+    File permissions are typically handled automatically. Ensure:
+    - The web server has read access to all files
+    - PHP has write access to the session directory
+    
+    <Note>
+      On development environments (XAMPP/WAMP), default permissions are usually sufficient. This step is critical for production Linux servers.
+    </Note>
+  </Step>
+
+  <Step title="Verify PHP Session Configuration">
+    The system relies on PHP sessions for authentication. Verify session configuration:
+    
+    1. Check `php.ini` settings:
+       ```ini
+       session.save_handler = files
+       session.save_path = "/tmp"  ; or your preferred path
+       session.use_cookies = 1
+       session.use_only_cookies = 1
+       ```
+    
+    2. Ensure the session directory is writable:
+       ```bash
+       # Linux
+       sudo chmod 1733 /var/lib/php/sessions
+       ```
+    
+    3. Test session functionality by accessing `login.php` - if it loads without errors, sessions are working.
+  </Step>
+
+  <Step title="Test the Installation">
+    Verify your installation is working correctly:
+    
+    1. **Access the application**: Navigate to `http://localhost/asistencias/`
+       - You should be redirected to `login.php`
+    
+    2. **Check database connection**: If the login page loads, the database connection is working
+    
+    3. **Test registration**: Click "Registrarse" to access `registra_sesion.php`
+       - The registration form should display without errors
+    
+    4. **Check for errors**: If you see a blank page or errors:
+       - Enable error display: Add `error_reporting(E_ALL); ini_set('display_errors', 1);` to the top of `db.php`
+       - Check Apache/PHP error logs
+       - Verify database connection credentials
+  </Step>
+</Steps>
+
+## Security Features
+
+Asistencias includes several built-in security features:
+
+### Input Sanitization
+
+All user input is sanitized using the `sanitize_input()` function:
+
+```php db.php:15-21
+function sanitize_input($data) {
+    $data = trim($data);
+    $data = stripslashes($data);
+    $data = htmlspecialchars($data);
+ 
+    return $data;
+}
+```
+
+This function:
+- Removes leading/trailing whitespace
+- Strips backslashes
+- Converts special characters to HTML entities (prevents XSS)
+
+### SQL Injection Prevention
+
+The system uses prepared statements for all database queries:
+
+```php login.php:11-14
+$stmt = $conn->prepare("SELECT id, nombre, password_hash, rol_id FROM usuarios WHERE correo = ?");
+$stmt->bind_param("s", $correo);
+$stmt->execute();
+$result = $stmt->get_result();
+```
+
+### Password Security
+
+Passwords are hashed using bcrypt (via `PASSWORD_BCRYPT`):
+
+```php registra_sesion.php:34
+$password_hash = password_hash($password, PASSWORD_BCRYPT);
+```
+
+### Session-Based Authentication
+
+All protected pages verify the user session:
+
+```php admin/usuarios.php:2-6
+session_start();  
+if (!isset($_SESSION['usuario_id']) || $_SESSION['rol_id'] != 1) {     
+    header("Location: ../login.php");     
+    exit(); 
+}
+```
+
+## File Structure Explained
+
+<AccordionGroup>
+  <Accordion title="Root Directory Files">
+    - **db.php**: Database connection and utility functions
+    - **bd.sql**: Database schema and initial data
+    - **index.html**: Entry point (redirects to login.php)
+    - **login.php**: User authentication page
+    - **logout.php**: Session termination handler
+    - **registra_sesion.php**: User registration page
+  </Accordion>
+  
+  <Accordion title="admin/ Directory">
+    Administrative functions (requires rol_id = 1):
+    - **usuarios.php**: User management interface
+    - **practicantes.php**: Intern management
+    - **asistencias.php**: Attendance administration
+    - **reportes.php**: Report generation
+    - **guardar_usuario.php**: User creation handler
+    - **editar_usuario.php**: User editing interface
+    - **eliminar_usuario.php**: User deletion handler
+    - **perfil.php**: Admin profile page
+  </Accordion>
+  
+  <Accordion title="dasboards/ Directory">
+    Role-specific dashboard pages:
+    - **admin_dashboard.php**: Admin control panel
+    - **supervisor_dashboard.php**: Supervisor monitoring panel
+    - **practicante_dashboard.php**: Intern self-service panel
+  </Accordion>
+  
+  <Accordion title="supervisor/ Directory">
+    Supervisor functions (requires rol_id = 2):
+    - **lista_asistencias.php**: View attendance lists
+    - **usuarios.php**: View user information
+  </Accordion>
+  
+  <Accordion title="practicantes/ Directory">
+    Intern functions (requires rol_id = 3):
+    - **perfil.php**: Intern profile page
+  </Accordion>
+  
+  <Accordion title="css/ and img/ Directories">
+    - **css/**: Stylesheets for different pages
+    - **img/**: Image assets (background, icons)
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Connection failed: Access denied for user">
+    **Cause**: Incorrect database credentials in `db.php`
+    
+    **Solution**:
+    1. Verify your MySQL username and password
+    2. Test the connection manually:
+       ```bash
+       mysql -u root -p
+       ```
+    3. Update `db.php` with correct credentials
+  </Accordion>
+  
+  <Accordion title="Unknown database 'asistencia_practicantes'">
+    **Cause**: Database hasn't been created
+    
+    **Solution**:
+    1. Create the database:
+       ```sql
+       CREATE DATABASE asistencia_practicantes;
+       ```
+    2. Import the schema:
+       ```bash
+       mysql -u root -p asistencia_practicantes < bd.sql
+       ```
+  </Accordion>
+  
+  <Accordion title="Blank page or 500 Internal Server Error">
+    **Cause**: PHP error or misconfiguration
+    
+    **Solution**:
+    1. Check error logs:
+       - XAMPP: `xampp/apache/logs/error.log`
+       - Linux: `/var/log/apache2/error.log`
+    2. Enable PHP error display temporarily:
+       ```php
+       error_reporting(E_ALL);
+       ini_set('display_errors', 1);
+       ```
+    3. Verify mysqli extension is enabled:
+       ```bash
+       php -m | grep mysqli
+       ```
+  </Accordion>
+  
+  <Accordion title="Session errors or immediate logout">
+    **Cause**: PHP sessions not working properly
+    
+    **Solution**:
+    1. Check session directory permissions:
+       ```bash
+       ls -la /var/lib/php/sessions
+       ```
+    2. Verify session configuration in `php.ini`
+    3. Clear browser cookies
+    4. Restart web server:
+       ```bash
+       sudo systemctl restart apache2
+       ```
+  </Accordion>
+  
+  <Accordion title="CSS/Images not loading">
+    **Cause**: Incorrect file paths or permissions
+    
+    **Solution**:
+    1. Verify file structure matches expected layout
+    2. Check Apache/Nginx configuration for static file serving
+    3. Ensure files have read permissions
+    4. Clear browser cache
+  </Accordion>
+</AccordionGroup>
+
+## Configuration Options
+
+### Database Connection
+
+The `db.php` file contains the core configuration:
+
+<CodeGroup>
+  ```php Connection Settings
+  $host = "localhost";      // Database server hostname
+  $user = "root";           // MySQL username
+  $password = "";           // MySQL password
+  $db = "asistencia_practicantes";  // Database name
+  ```
+  
+  ```php Character Encoding
+  $conn->set_charset("utf8mb4");  // Supports full Unicode including emoji
+  ```
+</CodeGroup>
+
+### Role-Based Access Control
+
+The system uses role IDs to control access:
+
+| Role ID | Role Name | Access Level |
+|---------|-----------|-------------|
+| 1 | admin | Full system access |
+| 2 | supervisor | Monitoring and reporting |
+| 3 | practicante | Personal attendance only |
+
+## Next Steps
+
+Now that installation is complete:
+
+1. **Create your first admin account**: Follow the [Quickstart Guide](/quickstart)
+2. **Configure additional users**: Add supervisors and interns through the admin panel
+3. **Customize the system**: Modify CSS files in `/css/` directory
+4. **Set up backups**: Implement regular database backups
+
+<Note>
+  Remember to secure your production installation by changing default credentials, enabling HTTPS, and following security best practices outlined in the [Quickstart Guide](/quickstart#security-best-practices).
+</Note>
+
+## Production Deployment Checklist
+
+Before deploying to production:
+
+- [ ] Change database credentials from defaults
+- [ ] Create dedicated MySQL user with limited privileges
+- [ ] Enable HTTPS with valid SSL certificate
+- [ ] Set restrictive file permissions (especially `db.php`)
+- [ ] Disable PHP error display (`display_errors = Off`)
+- [ ] Enable PHP error logging
+- [ ] Implement regular database backups
+- [ ] Test all authentication flows
+- [ ] Verify role-based access controls
+- [ ] Set up monitoring and logging
+- [ ] Configure firewall rules
+- [ ] Update session security settings in php.ini

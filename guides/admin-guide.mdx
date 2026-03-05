@@ -1,0 +1,303 @@
+---
+title: 'Administrator Guide'
+description: 'Complete guide for system administrators managing the Asistencias platform'
+icon: 'user-shield'
+---
+
+## Overview
+
+The Administrator role has full access to the Asistencias system, including user management, intern oversight, attendance tracking, and system-wide reporting. This guide covers all administrative functions available in the platform.
+
+<Info>
+**Role ID:** 1 (Admin)
+
+**Access Level:** Full system access with all privileges
+</Info>
+
+## Accessing the Admin Dashboard
+
+<Steps>
+  <Step title="Login to the System">
+    Navigate to the login page and enter your credentials (email and password). The system will automatically redirect you to the admin dashboard after successful authentication.
+    
+    ```php
+    // Role-based redirect after login
+    case 1: // Admin
+        header("Location: dasboards/admin_dashboard.php");
+    ```
+  </Step>
+  
+  <Step title="View Dashboard Overview">
+    The admin dashboard displays three key metrics:
+    
+    <CardGroup cols={3}>
+      <Card title="Usuarios Registrados" icon="users">
+        Total count of all users in the system
+      </Card>
+      <Card title="Practicantes" icon="user-graduate">
+        Total count of interns (rol_id = 3)
+      </Card>
+      <Card title="Asistencias Hoy" icon="calendar-check">
+        Today's attendance records (WHERE fecha = CURDATE())
+      </Card>
+    </CardGroup>
+  </Step>
+</Steps>
+
+## Navigation Menu
+
+The admin sidebar provides access to all administrative functions:
+
+<Accordion title="Panel de Administración">
+  Main dashboard with system overview and statistics
+</Accordion>
+
+<Accordion title="Gestión de Usuarios">
+  Complete user management interface including creating, editing, and deleting users across all roles
+</Accordion>
+
+<Accordion title="Practicantes">
+  Dedicated view for managing interns with filtering and role-specific actions
+</Accordion>
+
+<Accordion title="Perfil">
+  Update your admin profile information including name, email, and password
+</Accordion>
+
+<Accordion title="Asistencias">
+  View all attendance records system-wide with export capabilities
+</Accordion>
+
+## Managing Users
+
+### Creating New Users
+
+Administrators can create users with any role (Admin, Supervisor, or Practicante).
+
+<Steps>
+  <Step title="Open the New User Modal">
+    Click the **"Nuevo Usuario"** button on the Gestión de Usuarios page to open the creation form.
+  </Step>
+  
+  <Step title="Fill in User Details">
+    Required fields:
+    - **Nombre**: Full name of the user
+    - **Email**: Unique email address (used for login)
+    - **Contraseña**: Password (will be hashed using PASSWORD_DEFAULT)
+    - **Rol**: Select from available roles in the database
+    
+    ```php
+    <select name="rol_id" class="form-control" required>
+        <?php
+        $roles = $conn->query("SELECT * FROM roles");
+        while ($rol = $roles->fetch_assoc()) {
+            echo "<option value='{$rol['id']}'>{$rol['nombre']}</option>";
+        }
+        ?>
+    </select>
+    ```
+  </Step>
+  
+  <Step title="Submit the Form">
+    Click **"Guardar"** to create the user. The form submits to `guardar_usuario.php` for processing.
+  </Step>
+</Steps>
+
+### Editing Existing Users
+
+Each user in the table has an **Edit** button that allows modification of their information.
+
+<Tip>
+User edits are performed through `editar_usuario.php?id={usuario_id}` with prepared SQL statements to prevent injection attacks.
+</Tip>
+
+### Deleting Users
+
+The **Delete** button removes users from the system with a confirmation prompt.
+
+<Warning>
+Deletion is permanent. The system displays a JavaScript confirmation: 
+"¿Estás seguro de eliminar este usuario?"
+</Warning>
+
+## Managing Practicantes
+
+The Practicantes section provides a filtered view of all interns in the system.
+
+### Viewing Intern List
+
+The intern management page displays:
+- **ID**: Unique identifier
+- **Nombre**: Intern's full name
+- **Rol**: Role name (joined from roles table)
+- **Acciones**: Edit and Delete buttons
+
+```php
+$query = "SELECT u.*, r.nombre as rol_nombre FROM usuarios u 
+          JOIN roles r ON u.rol_id = r.id";
+$result = $conn->query($query);
+```
+
+<Note>
+The current implementation shows all users, not just interns. Consider filtering by `WHERE u.rol_id = 3` for intern-specific views.
+</Note>
+
+## Monitoring Attendance
+
+### Viewing Attendance Records
+
+The Asistencias page shows all attendance records across the system:
+
+<Tabs>
+  <Tab title="Table View">
+    | Column | Description |
+    |--------|-------------|
+    | Practicante | Intern's name (joined from usuarios table) |
+    | Fecha | Attendance date |
+    | Hora Entrada | Check-in time |
+    | Hora Salida | Check-out time (or "No registrada") |
+    | Estado | Badge showing "Completada" (green) or "Incompleta" (yellow) |
+  </Tab>
+  
+  <Tab title="Status Logic">
+    ```php
+    $estado = ($asistencia['hora_entrada'] && $asistencia['hora_salida']) 
+              ? 'Completada' : 'Incompleta';
+    $estadoClass = $estado == 'Completada' ? 'success' : 'warning';
+    ```
+  </Tab>
+</Tabs>
+
+### Exporting Attendance Data
+
+Administrators can export attendance records to Excel format:
+
+<Steps>
+  <Step title="Click Export Button">
+    On the Asistencias page, click **"Exportar a XLSX"**
+  </Step>
+  
+  <Step title="Download Generated File">
+    The system generates an Excel file named `asistencia.xls` with all records:
+    
+    ```php
+    header("Content-Type: application/vnd.ms-excel");
+    header("Content-Disposition: attachment; filename=asistencia.xls");
+    ```
+  </Step>
+  
+  <Step title="Review Export Data">
+    The export includes:
+    - Practicante ID (nombre)
+    - Fecha
+    - Hora de Entrada
+    - Hora de Salida
+    - Estado (Completa/Incompleta)
+  </Step>
+</Steps>
+
+## Generating Reports
+
+The Reports section provides system-wide analytics:
+
+### Available Reports
+
+<CardGroup cols={3}>
+  <Card title="Asistencias por Mes" icon="calendar">
+    Monthly attendance counts grouped by month
+    
+    ```sql
+    SELECT MONTH(fecha) as mes, COUNT(*) as total 
+    FROM asistencia 
+    GROUP BY MONTH(fecha)
+    ```
+  </Card>
+  
+  <Card title="Asistencias por Practicante" icon="user">
+    Attendance counts per intern
+    
+    ```sql
+    SELECT p.nombre, COUNT(a.id) as total 
+    FROM practicantes p 
+    LEFT JOIN asistencia a ON p.id = a.practicante_id 
+    GROUP BY p.id
+    ```
+  </Card>
+  
+  <Card title="Asistencias Totales" icon="chart-bar">
+    Total system-wide attendance count
+    
+    ```sql
+    SELECT COUNT(*) as total FROM asistencia
+    ```
+  </Card>
+</CardGroup>
+
+<Tip>
+All report cards include an **Export** button for downloading data to external formats.
+</Tip>
+
+## Security Best Practices
+
+<Accordion title="Session Management">
+  All admin pages verify authentication and role:
+  
+  ```php
+  session_start();
+  if (!isset($_SESSION['usuario_id']) || $_SESSION['rol_id'] != 1) {
+      header("Location: ../login.php");
+      exit();
+  }
+  ```
+</Accordion>
+
+<Accordion title="Password Handling">
+  Passwords are hashed using PHP's `password_hash()` with PASSWORD_DEFAULT algorithm before storage.
+</Accordion>
+
+<Accordion title="SQL Injection Prevention">
+  Use prepared statements for all database queries involving user input:
+  
+  ```php
+  $stmt = $conn->prepare("SELECT u.*, r.nombre as rol_nombre 
+                          FROM usuarios u 
+                          JOIN roles r ON u.rol_id = r.id");
+  $stmt->execute();
+  $result = $stmt->get_result();
+  ```
+</Accordion>
+
+## Common Administrative Tasks
+
+### Resetting User Passwords
+
+Navigate to **Gestión de Usuarios** → Click **Edit** on the target user → Enter a new password in the password field → Submit the form.
+
+### Reviewing Today's Attendance
+
+The dashboard displays today's attendance count at a glance. For detailed records, navigate to **Asistencias** and filter by the current date.
+
+### Managing System Roles
+
+Roles are defined in the `roles` table:
+- **ID 1**: admin
+- **ID 2**: supervisor
+- **ID 3**: practicante
+
+<Warning>
+Role management requires direct database access. Modifying roles through the UI is not currently supported.
+</Warning>
+
+## Troubleshooting
+
+<Accordion title="Cannot see new users after creation">
+  Refresh the Gestión de Usuarios page. If the issue persists, check the database connection and verify the user was inserted into the `usuarios` table.
+</Accordion>
+
+<Accordion title="Export file is empty">
+  Ensure there are attendance records in the database. The export query selects all records from the `asistencia` table joined with `usuarios`.
+</Accordion>
+
+<Accordion title="Unauthorized access error">
+  Verify your session is active and your `rol_id` is set to 1. Clear browser cookies and log in again if necessary.
+</Accordion>

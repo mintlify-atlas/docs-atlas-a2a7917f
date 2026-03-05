@@ -1,0 +1,482 @@
+---
+title: Attendance Tracking
+description: Complete guide to recording and managing intern attendance in Asistencias
+icon: calendar-check
+---
+
+## Overview
+
+The attendance tracking system allows practicantes to check in and out daily, while admins and supervisors can monitor all attendance records. The system tracks entry time (hora_entrada) and exit time (hora_salida) with automatic date stamping.
+
+## Database Schema
+
+The attendance system uses the `asistencia` table:
+
+```sql
+CREATE TABLE asistencia (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    practicante_id INT NOT NULL,
+    fecha DATE NOT NULL,
+    hora_entrada TIME NOT NULL,
+    hora_salida TIME NULL,
+    FOREIGN KEY (practicante_id) REFERENCES practicantes(id)
+);
+```
+
+<Note>
+  The schema references `practicante_id`, but the implementation actually uses `usuario_id` to link directly to the usuarios table. This allows any user with role "practicante" to track attendance.
+</Note>
+
+## Attendance Recording
+
+### Check-In Process (Marcar Entrada)
+
+Practicantes mark their entry time through the dashboard:
+
+<Tabs>
+  <Tab title="User Interface">
+    The practicante dashboard shows a check-in button when no attendance record exists for the current day:
+
+    ```php
+    // practicante_dashboard.php
+    <?php if (!$asistencia) { ?>
+        <form action="" method="post">
+            <button type="submit" name="marcar_entrada" 
+                    class="btn btn-primary btn-block">
+                Marcar Entrada
+            </button>
+        </form>
+    <?php } ?>
+    ```
+  </Tab>
+
+  <Tab title="Backend Logic">
+    When the user clicks "Marcar Entrada", the system records the current date and time:
+
+    ```php
+    if (isset($_POST['marcar_entrada'])) {
+        $query = "INSERT INTO asistencia 
+                  (usuario_id, fecha, hora_entrada, hora_salida) 
+                  VALUES ('$usuario_id', DATE(NOW()), TIME(NOW()), NULL)";
+        mysqli_query($conn, $query);
+        header('Location: practicante_dashboard.php');
+        exit;
+    }
+    ```
+
+    **Fields populated:**
+    - `usuario_id`: Current session user ID
+    - `fecha`: Current date (DATE(NOW()))
+    - `hora_entrada`: Current time (TIME(NOW()))
+    - `hora_salida`: NULL (to be filled at checkout)
+  </Tab>
+
+  <Tab title="Daily Check">
+    The system checks if attendance already exists for today:
+
+    ```php
+    $query = "SELECT * FROM asistencia 
+              WHERE usuario_id = '$usuario_id' 
+              AND fecha = DATE(NOW())";
+    $result = mysqli_query($conn, $query);
+    $asistencia = mysqli_fetch_assoc($result);
+    ```
+
+    - If `$asistencia` is NULL → Show "Marcar Entrada" button
+    - If `$asistencia` exists → Show "Marcar Salida" button
+  </Tab>
+</Tabs>
+
+### Check-Out Process (Marcar Salida)
+
+After checking in, practicantes can mark their exit time:
+
+<Tabs>
+  <Tab title="User Interface">
+    ```php
+    <?php if ($asistencia) { ?>
+        <form action="" method="post">
+            <button type="submit" name="marcar_salida" 
+                    class="btn btn-primary btn-block">
+                Marcar Salida
+            </button>
+        </form>
+    <?php } ?>
+    ```
+  </Tab>
+
+  <Tab title="Backend Logic">
+    The system updates the existing record with the exit time:
+
+    ```php
+    if (isset($_POST['marcar_salida'])) {
+        $query = "UPDATE asistencia 
+                  SET hora_salida = TIME(NOW()) 
+                  WHERE usuario_id = '$usuario_id' 
+                  AND fecha = DATE(NOW())";
+        mysqli_query($conn, $query);
+        header('Location: practicante_dashboard.php');
+        exit;
+    }
+    ```
+
+    <Warning>
+      The code includes a check for duplicate checkout, but it's placed after the redirect:
+      ```php
+      if ($asistencia_registro && $asistencia_registro['hora_salida'] != NULL) {
+          echo "Ya has marcado la salida para hoy";
+      }
+      ```
+      This code is unreachable due to the earlier `exit;` statement.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Attendance Status
+
+The system categorizes attendance records based on completion:
+
+<CardGroup cols={2}>
+  <Card title="Completada" icon="circle-check" color="#4CAF50">
+    Both hora_entrada and hora_salida are recorded
+  </Card>
+  <Card title="Incompleta" icon="circle-exclamation" color="#FF9800">
+    Only hora_entrada is recorded (hora_salida is NULL)
+  </Card>
+</CardGroup>
+
+### Status Calculation
+
+```php
+// admin/asistencias.php
+$estado = ($asistencia['hora_entrada'] && $asistencia['hora_salida']) 
+          ? 'Completada' : 'Incompleta';
+$estadoClass = $estado == 'Completada' ? 'success' : 'warning';
+```
+
+### Status Display
+
+```php
+echo "<tr>
+        <td>{$asistencia['nombre']}</td>
+        <td>{$asistencia['fecha']}</td>
+        <td>{$asistencia['hora_entrada']}</td>
+        <td>{$hora_salida}</td>
+        <td>
+            <span class='badge badge-{$estadoClass}'>{$estado}</span>
+        </td>
+      </tr>";
+```
+
+## Admin Attendance Management
+
+Administrators can view and export all attendance records through `admin/asistencias.php`:
+
+### Viewing All Records
+
+<Accordion title="Attendance List Query">
+  ```php
+  $query = "SELECT a.*, u.nombre 
+            FROM asistencia a 
+            JOIN usuarios u ON a.usuario_id = u.id 
+            ORDER BY a.fecha DESC";
+  $result = $conn->query($query);
+  ```
+
+  This query:
+  - Joins asistencia with usuarios to get names
+  - Orders by fecha (date) in descending order (newest first)
+  - Returns all fields from asistencia plus user name
+</Accordion>
+
+<Accordion title="Display Table">
+  ```php
+  <table class="table table-striped">
+      <thead>
+          <tr>
+              <th>Practicante</th>
+              <th>Fecha</th>
+              <th>Hora Entrada</th>
+              <th>Hora Salida</th>
+              <th>Estado</th>
+          </tr>
+      </thead>
+      <tbody>
+          <?php
+          while($asistencia = $result->fetch_assoc()) {
+              $estado = ($asistencia['hora_entrada'] && $asistencia['hora_salida']) 
+                        ? 'Completada' : 'Incompleta';
+              $estadoClass = $estado == 'Completada' ? 'success' : 'warning';
+              $hora_salida = $asistencia['hora_salida'] ?: 'No registrada';
+
+              echo "<tr>
+                      <td>{$asistencia['nombre']}</td>
+                      <td>{$asistencia['fecha']}</td>
+                      <td>{$asistencia['hora_entrada']}</td>
+                      <td>{$hora_salida}</td>
+                      <td>
+                          <span class='badge badge-{$estadoClass}'>{$estado}</span>
+                      </td>
+                    </tr>";
+          }
+          ?>
+      </tbody>
+  </table>
+  ```
+</Accordion>
+
+### Excel Export Functionality
+
+Admins can export attendance records to Excel format:
+
+<Tabs>
+  <Tab title="Export Button">
+    ```php
+    <form method="post" style="display:inline;">
+        <button type="submit" name="exportar" 
+                class="btn btn-outline-primary">
+            Exportar a XLSX
+        </button>
+    </form>
+    ```
+  </Tab>
+
+  <Tab title="Export Query">
+    ```php
+    if (isset($_POST['exportar'])) {
+        $data = array();
+        $query = "SELECT u.nombre, a.fecha, a.hora_entrada, a.hora_salida,
+                  CASE 
+                    WHEN a.hora_entrada IS NOT NULL AND a.hora_salida IS NOT NULL 
+                    THEN 'Completada' 
+                    ELSE 'Incompleta' 
+                  END AS estado
+                  FROM asistencia a
+                  JOIN usuarios u ON a.usuario_id = u.id
+                  ORDER BY a.fecha DESC;";
+
+        $result = mysqli_query($conn, $query);
+
+        while ($row = mysqli_fetch_assoc($result)) {
+            $data[] = $row;
+        }
+    ```
+
+    The query includes a CASE statement to calculate status within SQL.
+  </Tab>
+
+  <Tab title="Excel Generation">
+    ```php
+        // Set headers for Excel file
+        header("Content-Type: application/vnd.ms-excel");
+        header("Content-Disposition: attachment; filename=asistencia.xls");
+        header("Pragma: no-cache");
+        header("Expires: 0");
+
+        // Generate HTML table for Excel
+        echo "<table border='1'>";
+        echo "<tr>
+                <th>Practicante ID</th>
+                <th>Fecha</th>
+                <th>Hora de Entrada</th>
+                <th>Hora de Salida</th>
+                <th>Estado</th>
+              </tr>";
+
+        foreach ($data as $fila) {
+            $hora_entrada = $fila['hora_entrada'] ?? null;
+            $hora_salida = $fila['hora_salida'] ?? null;
+            $estado = (!empty($hora_entrada) && !empty($hora_salida)) 
+                      ? 'Completa' : 'Incompleta';
+
+            echo "<tr>";
+            echo "<td>{$fila['nombre']}</td>";
+            echo "<td>{$fila['fecha']}</td>";
+            echo "<td>{$hora_entrada}</td>";
+            echo "<td>{$hora_salida}</td>";
+            echo "<td>{$estado}</td>";
+            echo "</tr>";
+        }
+        echo "</table>";
+
+        exit;
+    }
+    ```
+
+    <Note>
+      The export uses HTML table format with Excel MIME type. While this works for basic exports, a proper Excel library (like PHPSpreadsheet) would provide better formatting and features.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Supervisor Attendance Monitoring
+
+Supervisors can view attendance through `supervisor/lista_asistencias.php`:
+
+### Dashboard Statistics
+
+```php
+// dasboards/supervisor_dashboard.php
+
+// Count today's attendance records
+$result = $conn->query(
+    "SELECT COUNT(*) as total 
+     FROM asistencia 
+     WHERE fecha = CURDATE()"
+);
+$row = $result->fetch_assoc();
+echo "<h5 class='card-title'>" . $row['total'] . " Registros</h5>";
+```
+
+<CardGroup cols={2}>
+  <Card title="Practicantes Activos" icon="users">
+    ```php
+    $result = $conn->query(
+        "SELECT COUNT(*) as total FROM practicantes"
+    );
+    ```
+  </Card>
+  <Card title="Asistencias Hoy" icon="calendar-day">
+    ```php
+    $result = $conn->query(
+        "SELECT COUNT(*) as total 
+         FROM asistencia 
+         WHERE fecha = CURDATE()"
+    );
+    ```
+  </Card>
+</CardGroup>
+
+## Practicante Attendance History
+
+Practicantes can view their personal attendance history:
+
+```php
+// dasboards/practicante_dashboard.php
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Fecha</th>
+            <th>Hora Entrada</th>
+            <th>Hora Salida</th>
+        </tr>
+    </thead>
+    <tbody>
+        <?php
+        $query = "SELECT * FROM asistencia WHERE usuario_id = '$usuario_id'";
+        $result = mysqli_query($conn, $query);
+        while ($asistencia_registro = mysqli_fetch_assoc($result)) {
+            echo "<tr>
+                    <td>{$asistencia_registro['fecha']}</td>
+                    <td>{$asistencia_registro['hora_entrada']}</td>
+                    <td>{$asistencia_registro['hora_salida']}</td>
+                  </tr>";
+        }
+        ?>
+    </tbody>
+</table>
+```
+
+## Date and Time Functions
+
+The system uses MySQL date/time functions extensively:
+
+<Accordion title="Current Date: DATE(NOW())">
+  Returns the current date in 'YYYY-MM-DD' format:
+  ```sql
+  INSERT INTO asistencia (fecha) VALUES (DATE(NOW()));
+  -- Example: 2026-03-05
+  ```
+</Accordion>
+
+<Accordion title="Current Time: TIME(NOW())">
+  Returns the current time in 'HH:MM:SS' format:
+  ```sql
+  INSERT INTO asistencia (hora_entrada) VALUES (TIME(NOW()));
+  -- Example: 14:30:45
+  ```
+</Accordion>
+
+<Accordion title="Current Date: CURDATE()">
+  Used for date comparisons:
+  ```sql
+  SELECT * FROM asistencia WHERE fecha = CURDATE();
+  ```
+</Accordion>
+
+## Business Logic Constraints
+
+<Warning>
+  **Important Limitations:**
+
+  1. **One Record Per Day**: Practicantes can only have one attendance record per day
+  2. **No Retroactive Entry**: Cannot mark attendance for past dates
+  3. **Sequential Marking**: Must mark entrada before salida
+  4. **No Edit Functionality**: Once marked, attendance cannot be edited by practicantes
+  5. **No Deletion**: Practicantes cannot delete attendance records
+</Warning>
+
+### Preventing Duplicate Check-Ins
+
+```php
+// Check for existing record today
+$query = "SELECT * FROM asistencia 
+          WHERE usuario_id = '$usuario_id' 
+          AND fecha = DATE(NOW())";
+$result = mysqli_query($conn, $query);
+$asistencia = mysqli_fetch_assoc($result);
+
+if (!$asistencia) {
+    // Show "Marcar Entrada" button
+} else {
+    // Show "Marcar Salida" button (if not already marked)
+}
+```
+
+## Common Queries
+
+### Get All Attendance for a User
+
+```php
+SELECT * FROM asistencia 
+WHERE usuario_id = ? 
+ORDER BY fecha DESC;
+```
+
+### Get Today's Attendance
+
+```php
+SELECT a.*, u.nombre 
+FROM asistencia a 
+JOIN usuarios u ON a.usuario_id = u.id 
+WHERE a.fecha = CURDATE();
+```
+
+### Get Incomplete Attendance
+
+```php
+SELECT a.*, u.nombre 
+FROM asistencia a 
+JOIN usuarios u ON a.usuario_id = u.id 
+WHERE a.hora_salida IS NULL;
+```
+
+### Count Monthly Attendance
+
+```php
+SELECT COUNT(*) as total 
+FROM asistencia 
+WHERE MONTH(fecha) = ? 
+AND YEAR(fecha) = ?;
+```
+
+## Recommended Improvements
+
+1. **Add Edit Functionality**: Allow admins to correct attendance records
+2. **Implement Time Validation**: Ensure salida time is after entrada time
+3. **Add Absence Tracking**: Mark expected days when no attendance is recorded
+4. **Late Arrival Detection**: Flag entries after a defined start time
+5. **Early Departure Detection**: Flag exits before expected end time
+6. **Use Prepared Statements**: Refactor queries to prevent SQL injection
+7. **Add Attendance Comments**: Allow notes for special circumstances
+8. **Implement Geolocation**: Verify physical presence at check-in

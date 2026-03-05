@@ -1,0 +1,475 @@
+---
+title: 'Intern Guide'
+description: 'Complete guide for interns to track attendance and manage their profile'
+icon: 'user-graduate'
+---
+
+## Welcome, Practicantes!
+
+This guide will help you use the Asistencias system to track your daily attendance at your municipal internship. The system makes it easy to check in when you arrive and check out when you leave.
+
+<Info>
+**Role ID:** 3 (Practicante)
+
+**Your Capabilities:** Mark attendance, view attendance history, update profile
+</Info>
+
+## Getting Started
+
+### Creating Your Account
+
+<Steps>
+  <Step title="Request Account Creation">
+    Contact your supervisor or system administrator to create an account for you. They will need:
+    - Your full name
+    - Your email address
+    - A temporary password
+  </Step>
+  
+  <Step title="Receive Credentials">
+    You'll receive your login email and initial password. Keep these secure.
+  </Step>
+  
+  <Step title="First Login">
+    Navigate to the login page and enter your credentials:
+    
+    ```php
+    case 3: // Practicante
+        header("Location: dasboards/practicante_dashboard.php");
+    ```
+    
+    The system automatically redirects interns to the practicante dashboard.
+  </Step>
+</Steps>
+
+## Your Dashboard
+
+After logging in, you'll see your personal dashboard with:
+
+### Welcome Message
+
+```php
+<h1 class="text-center">Bienvenido, <?php echo $practicante['nombre']; ?></h1>
+```
+
+Your name is displayed at the top of the page.
+
+### Attendance Buttons
+
+Depending on whether you've already checked in today, you'll see:
+
+<Tabs>
+  <Tab title="Before Check-in">
+    **"Marcar Entrada"** button (blue)
+    
+    Click this when you arrive at your internship location.
+    
+    ```php
+    <?php if (!$asistencia) { ?>
+        <form action="" method="post">
+            <button type="submit" name="marcar_entrada" 
+                    class="btn btn-primary btn-block">
+                Marcar Entrada
+            </button>
+        </form>
+    <?php } ?>
+    ```
+  </Tab>
+  
+  <Tab title="After Check-in">
+    **"Marcar Salida"** button (blue)
+    
+    Click this when you're leaving for the day.
+    
+    ```php
+    <?php } else { ?>
+        <form action="" method="post">
+            <button type="submit" name="marcar_salida" 
+                    class="btn btn-primary btn-block">
+                Marcar Salida
+            </button>
+        </form>
+    <?php } ?>
+    ```
+  </Tab>
+</Tabs>
+
+### Attendance History Table
+
+Below the button, you'll see a table showing all your attendance records:
+
+| Fecha | Hora Entrada | Hora Salida |
+|-------|--------------|-------------|
+| 2026-03-05 | 08:30:00 | 17:00:00 |
+| 2026-03-04 | 08:25:00 | 16:55:00 |
+
+```php
+$query = "SELECT * FROM asistencia WHERE usuario_id = '$usuario_id'";
+$result = mysqli_query($conn, $query);
+while ($asistencia_registro = mysqli_fetch_assoc($result)) {
+    echo "<tr>
+            <td>{$asistencia_registro['fecha']}</td>
+            <td>{$asistencia_registro['hora_entrada']}</td>
+            <td>{$asistencia_registro['hora_salida']}</td>
+          </tr>";
+}
+```
+
+## Daily Attendance Process
+
+### Marking Your Entry
+
+<Steps>
+  <Step title="Arrive at Your Location">
+    When you arrive at your internship site, open the Asistencias system on your device.
+  </Step>
+  
+  <Step title="Log In">
+    If not already logged in, enter your email and password.
+  </Step>
+  
+  <Step title="Click Marcar Entrada">
+    On your dashboard, click the **"Marcar Entrada"** button.
+    
+    ```php
+    if (isset($_POST['marcar_entrada'])) {
+        $query = "INSERT INTO asistencia 
+                  (usuario_id, fecha, hora_entrada, hora_salida) 
+                  VALUES ('$usuario_id', DATE(NOW()), TIME(NOW()), NULL)";
+        mysqli_query($conn, $query);
+        header('Location: practicante_dashboard.php');
+        exit;
+    }
+    ```
+  </Step>
+  
+  <Step title="Verify">
+    The page will refresh and the button will change to **"Marcar Salida"**. Your entry time is now recorded.
+  </Step>
+</Steps>
+
+<Tip>
+The system automatically captures the current date and time when you click the button. You don't need to enter it manually.
+</Tip>
+
+### Marking Your Exit
+
+<Steps>
+  <Step title="Before Leaving">
+    When you're ready to leave for the day, access your dashboard again.
+  </Step>
+  
+  <Step title="Click Marcar Salida">
+    Click the **"Marcar Salida"** button.
+    
+    ```php
+    if (isset($_POST['marcar_salida'])) {
+        $query = "UPDATE asistencia 
+                  SET hora_salida = TIME(NOW()) 
+                  WHERE usuario_id = '$usuario_id' 
+                  AND fecha = DATE(NOW())";
+        mysqli_query($conn, $query);
+        header('Location: practicante_dashboard.php');
+        exit;
+    }
+    ```
+  </Step>
+  
+  <Step title="Confirm Exit">
+    The page refreshes and your exit time is recorded. Tomorrow, the button will reset to **"Marcar Entrada"**.
+  </Step>
+</Steps>
+
+<Warning>
+You can only mark your exit AFTER you've marked your entry for the day. The system checks for today's attendance record before allowing exit marking.
+</Warning>
+
+## Managing Your Profile
+
+Access your profile by clicking **"Perfil"** in the sidebar menu.
+
+### Viewing Your Information
+
+Your profile displays:
+
+<CardGroup cols={2}>
+  <Card title="Personal Info" icon="user">
+    - **Nombre**: Your full name
+    - **Correo Electrónico**: Your email address
+  </Card>
+  
+  <Card title="Role Info" icon="id-badge">
+    - **Rol**: Your role name (Practicante)
+    
+    Joined from the roles table
+  </Card>
+</CardGroup>
+
+```php
+$stmt = $conn->prepare("SELECT u.nombre, u.correo, u.password_hash, 
+                        r.nombre AS rol_nombre 
+                        FROM usuarios u 
+                        JOIN roles r ON u.rol_id = r.id 
+                        WHERE u.id = ?");
+$stmt->bind_param("i", $usuario_id);
+$stmt->execute();
+$result = $stmt->get_result();
+$usuario = $result->fetch_assoc();
+```
+
+### Updating Your Profile
+
+You can modify your personal information:
+
+<Steps>
+  <Step title="Scroll to Edit Section">
+    Below your profile information, you'll see the "Editar Usuario" section.
+  </Step>
+  
+  <Step title="Modify Fields">
+    Update any of the following:
+    - **Nombre**: Change your display name
+    - **Correo**: Update your email address
+    - **Contraseña**: Enter a new password (leave blank to keep current)
+  </Step>
+  
+  <Step title="Submit Changes">
+    Click the **"Actualizar"** button to save your changes.
+    
+    ```php
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $nombre = $_POST['nombre'];
+        $correo = $_POST['correo'];
+        $password = $_POST['password'];
+
+        if (!empty($password)) {
+            $password_hash = password_hash($password, PASSWORD_DEFAULT);
+        } else {
+            $password_hash = isset($usuario['password_hash']) 
+                           ? $usuario['password_hash'] : '';
+        }
+
+        $update_query = "UPDATE usuarios 
+                         SET nombre = ?, correo = ?, password_hash = ? 
+                         WHERE id = ?";
+        $update_stmt = $conn->prepare($update_query);
+        $update_stmt->bind_param("sssi", $nombre, $correo, 
+                                 $password_hash, $usuario_id);
+    }
+    ```
+  </Step>
+  
+  <Step title="Verify Success">
+    You'll see a success message: "Perfil actualizado con éxito."
+  </Step>
+</Steps>
+
+<Tip>
+If you change your email address, use the new email for your next login.
+</Tip>
+
+## Navigation Menu
+
+The sidebar provides quick access to all intern features:
+
+<Accordion title="Inicio (Home)">
+  Returns you to the main dashboard where you can mark attendance.
+</Accordion>
+
+<Accordion title="Perfil (Profile)">
+  Opens your profile page for viewing and editing personal information.
+</Accordion>
+
+<Accordion title="Cerrar Sesión (Logout)">
+  Logs you out of the system and returns to the login page.
+  
+  ```php
+  // logout.php
+  session_start();
+  session_destroy();
+  header("Location: login.php");
+  ```
+</Accordion>
+
+## Understanding Your Attendance Records
+
+### Record Structure
+
+Each attendance record contains:
+
+<Tabs>
+  <Tab title="Fecha (Date)">
+    The date of your attendance in YYYY-MM-DD format.
+    
+    ```php
+    fecha = DATE(NOW())  // Current date
+    ```
+  </Tab>
+  
+  <Tab title="Hora Entrada (Entry Time)">
+    The exact time you clicked "Marcar Entrada" in HH:MM:SS format.
+    
+    ```php
+    hora_entrada = TIME(NOW())  // Current time
+    ```
+  </Tab>
+  
+  <Tab title="Hora Salida (Exit Time)">
+    The exact time you clicked "Marcar Salida" in HH:MM:SS format.
+    
+    ```php
+    hora_salida = TIME(NOW())  // Current time
+    ```
+    
+    Shows NULL or empty if you haven't marked exit yet.
+  </Tab>
+</Tabs>
+
+### Database Storage
+
+Your attendance is stored in the `asistencia` table:
+
+```sql
+CREATE TABLE asistencia (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    practicante_id INT NOT NULL,
+    fecha DATE NOT NULL,
+    hora_entrada TIME NOT NULL,
+    hora_salida TIME NULL,
+    FOREIGN KEY (practicante_id) REFERENCES practicantes(id)
+);
+```
+
+## Common Scenarios
+
+### Forgot to Mark Entry
+
+<Warning>
+Once the day has passed, you cannot retroactively mark attendance. Contact your supervisor if you forgot to check in.
+</Warning>
+
+### Forgot to Mark Exit
+
+Your record will show as "Incompleta" (incomplete) to supervisors. The `hora_salida` field will be NULL. Mark it the next time you're on-site if possible, or inform your supervisor.
+
+### Marked Wrong Time
+
+You cannot edit attendance records through the UI. Contact your supervisor or administrator to correct mistakes.
+
+### Can't See Today's Button
+
+The system checks for today's attendance record:
+
+```php
+$query = "SELECT * FROM asistencia 
+          WHERE usuario_id = '$usuario_id' 
+          AND fecha = DATE(NOW())";
+$result = mysqli_query($conn, $query);
+$asistencia = mysqli_fetch_assoc($result);
+```
+
+If `$asistencia` exists, you'll see "Marcar Salida". Otherwise, "Marcar Entrada".
+
+## Security and Access
+
+### Authentication
+
+All intern pages verify your identity:
+
+```php
+session_start();
+if (!isset($_SESSION['usuario_id']) || $_SESSION['rol_id'] != 3) {
+    error_log("Intento de acceso no autorizado. User ID: " . 
+              ($_SESSION['usuario_id'] ?? 'Not set') . ", Role ID: " . 
+              ($_SESSION['rol_id'] ?? 'Not set'));
+    header('Location: ../login.php');
+    exit;
+}
+```
+
+<Info>
+Unauthorized access attempts are logged. Only users with `rol_id = 3` can access intern features.
+</Info>
+
+### Password Security
+
+Your password is hashed before storage:
+
+```php
+$password_hash = password_hash($password, PASSWORD_DEFAULT);
+```
+
+The system uses PHP's built-in password hashing with bcrypt algorithm for security.
+
+## Best Practices
+
+<Accordion title="Mark Attendance Immediately">
+  Don't wait until later to mark your attendance. Do it right when you arrive and right before you leave to ensure accuracy.
+</Accordion>
+
+<Accordion title="Verify Your Records">
+  Regularly check your attendance history table to ensure all entries are recorded correctly.
+</Accordion>
+
+<Accordion title="Update Your Profile">
+  Keep your email address current so supervisors can contact you if needed.
+</Accordion>
+
+<Accordion title="Use Strong Passwords">
+  When updating your password, choose something secure that you'll remember.
+</Accordion>
+
+<Accordion title="Log Out on Shared Devices">
+  Always click "Cerrar Sesión" when using a shared computer to protect your account.
+</Accordion>
+
+## Troubleshooting
+
+### Cannot Log In
+
+<Steps>
+  <Step title="Verify Credentials">
+    Double-check your email and password. Email addresses are case-sensitive.
+  </Step>
+  
+  <Step title="Check Role Assignment">
+    Your account must have `rol_id = 3`. Contact your administrator if you're being redirected elsewhere.
+  </Step>
+  
+  <Step title="Reset Password">
+    Ask your supervisor to reset your password if you've forgotten it.
+  </Step>
+</Steps>
+
+### Button Doesn't Appear
+
+- Refresh the page
+- Clear your browser cache
+- Try a different browser
+- Verify you're logged in with the correct account
+
+### Attendance Not Showing
+
+If you clicked the button but don't see the record:
+
+1. Check the database connection status
+2. Refresh the page to see if it appears
+3. Contact your supervisor if the issue persists
+
+## Getting Help
+
+If you experience issues:
+
+<CardGroup cols={2}>
+  <Card title="Contact Supervisor" icon="user-tie">
+    Your supervisor can help with attendance questions and basic troubleshooting.
+  </Card>
+  
+  <Card title="System Administrator" icon="user-shield">
+    For technical issues or account problems, contact the system administrator.
+  </Card>
+</CardGroup>
+
+<Note>
+Always provide specific details about the problem: what you were trying to do, any error messages, and when the issue occurred.
+</Note>

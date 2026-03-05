@@ -1,0 +1,661 @@
+---
+title: 'Managing Users'
+description: 'Complete guide to user management across all roles in the Asistencias platform'
+icon: 'users-gear'
+---
+
+## Overview
+
+User management is a critical administrative function in the Asistencias system. This guide covers creating, viewing, editing, and deleting user accounts across all three roles: Administrators, Supervisors, and Practicantes (Interns).
+
+<Info>
+**Required Role:** Administrator (rol_id = 1)
+
+**Location:** `admin/usuarios.php`
+</Info>
+
+## User Roles in the System
+
+The Asistencias platform uses three distinct user roles stored in the `roles` table:
+
+<CardGroup cols={3}>
+  <Card title="Administrador" icon="user-shield">
+    **Role ID: 1**
+    
+    Full system access including:
+    - User management
+    - Intern oversight
+    - Attendance tracking
+    - Reports and exports
+    - System configuration
+  </Card>
+  
+  <Card title="Supervisor" icon="user-tie">
+    **Role ID: 2**
+    
+    Limited management access:
+    - View users
+    - View/export attendance
+    - Monitor interns
+    - Dashboard access
+  </Card>
+  
+  <Card title="Practicante" icon="user-graduate">
+    **Role ID: 3**
+    
+    Self-service capabilities:
+    - Mark attendance
+    - View own records
+    - Update profile
+    - Dashboard access
+  </Card>
+</CardGroup>
+
+### Database Structure
+
+```sql
+CREATE TABLE roles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(50) UNIQUE NOT NULL
+);
+
+INSERT INTO roles (nombre) VALUES 
+    ('admin'),
+    ('supervisor'),
+    ('practicante');
+
+CREATE TABLE usuarios (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    correo VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    rol_id INT,
+    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (rol_id) REFERENCES roles(id)
+);
+```
+
+## Accessing User Management
+
+<Steps>
+  <Step title="Log In as Administrator">
+    Only administrators can access the full user management interface.
+    
+    ```php
+    session_start();
+    if (!isset($_SESSION['usuario_id']) || $_SESSION['rol_id'] != 1) {
+        header("Location: ../login.php");
+        exit();
+    }
+    ```
+  </Step>
+  
+  <Step title="Navigate to Gestión de Usuarios">
+    From the admin dashboard, click **"Gestión de Usuarios"** in the sidebar.
+  </Step>
+  
+  <Step title="View User List">
+    The page displays all users in a table with their details and available actions.
+  </Step>
+</Steps>
+
+## Viewing Users
+
+### User List Interface
+
+The main user management page displays a table with the following columns:
+
+| Column | Description | Source |
+|--------|-------------|--------|
+| ID | Unique user identifier | usuarios.id |
+| Nombre | User's full name | usuarios.nombre |
+| Email | User's email address | usuarios.correo |
+| Rol | Role ID number | usuarios.rol_id |
+| Acciones | Edit and Delete buttons | Action buttons |
+
+### Query Implementation
+
+```php
+$stmt = $conn->prepare("SELECT u.*, r.nombre as rol_nombre 
+                        FROM usuarios u 
+                        JOIN roles r ON u.rol_id = r.id");
+$stmt->execute();
+
+$result = $stmt->get_result();
+
+if ($result->num_rows > 0) {
+    while ($usuario = $result->fetch_assoc()) {
+        echo "<tr>
+                <td>{$usuario['id']}</td>
+                <td>{$usuario['nombre']}</td>
+                <td>{$usuario['correo']}</td>
+                <td>{$usuario['rol_id']}</td>
+                <td>
+                    <a href='editar_usuario.php?id={$usuario['id']}' 
+                       class='btn btn-sm btn-warning'>
+                        <i class='fas fa-edit'></i> Editar
+                    </a>
+                    <a href='eliminar_usuario.php?id={$usuario['id']}' 
+                       class='btn btn-sm btn-danger' 
+                       onclick='return confirm(\"¿Estás seguro de eliminar este usuario?\")'>                        <i class='fas fa-trash'></i> Eliminar
+                    </a>
+                </td>
+              </tr>";
+    }
+} else {
+    echo "No se encontraron usuarios.";
+}
+$stmt->close();
+```
+
+<Tip>
+The query uses a JOIN to fetch the role name from the `roles` table, though the current implementation displays `rol_id` instead of `rol_nombre` in the table.
+</Tip>
+
+## Creating New Users
+
+### Opening the Creation Modal
+
+Click the **"Nuevo Usuario"** button at the top of the user management page to open the modal dialog.
+
+### Required Fields
+
+<Tabs>
+  <Tab title="Form Fields">
+    <Steps>
+      <Step title="Nombre">
+        **Type:** Text input (required)
+        
+        The user's full name as it will appear throughout the system.
+        
+        ```html
+        <input type="text" name="nombre" class="form-control" required>
+        ```
+      </Step>
+      
+      <Step title="Email">
+        **Type:** Email input (required)
+        
+        Must be unique across all users. Used for login authentication.
+        
+        ```html
+        <input type="email" name="correo" class="form-control" required>
+        ```
+      </Step>
+      
+      <Step title="Contraseña">
+        **Type:** Password input (required)
+        
+        The user's password. Will be hashed before storage.
+        
+        ```html
+        <input type="password" name="password" class="form-control" required>
+        ```
+      </Step>
+      
+      <Step title="Rol">
+        **Type:** Select dropdown (required)
+        
+        Choose from available roles in the database.
+        
+        ```php
+        <select name="rol_id" class="form-control" required>
+            <?php
+            include 'db.php';
+            $roles = $conn->query("SELECT * FROM roles");
+            while ($rol = $roles->fetch_assoc()) {
+                echo "<option value='{$rol['id']}'>{$rol['nombre']}</option>";
+            }
+            ?>
+        </select>
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  
+  <Tab title="Form Submission">
+    ```html
+    <form method="POST" action="guardar_usuario.php">
+        <div class="modal-body">
+            <!-- Form fields -->
+        </div>
+        <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+    </form>
+    ```
+  </Tab>
+</Tabs>
+
+### Password Handling
+
+Passwords are never stored in plain text. The system uses PHP's password hashing:
+
+```php
+$password_hash = password_hash($password, PASSWORD_DEFAULT);
+```
+
+<Info>
+**Password Algorithm:** PASSWORD_DEFAULT
+
+Currently uses bcrypt algorithm. The hash is 60 characters long and includes salt.
+</Info>
+
+### Creating a New Administrator
+
+<Warning>
+Be careful when creating new administrators. They will have full system access including the ability to create and delete other users.
+</Warning>
+
+<Steps>
+  <Step title="Open New User Modal">
+    Click **"Nuevo Usuario"** button
+  </Step>
+  
+  <Step title="Fill Administrator Details">
+    - Nombre: Full name of the new admin
+    - Email: Unique email address
+    - Contraseña: Strong password
+    - Rol: Select "admin" (value: 1)
+  </Step>
+  
+  <Step title="Submit Form">
+    Click **"Guardar"** to create the account
+  </Step>
+  
+  <Step title="Verify Creation">
+    The new administrator should appear in the user list with rol_id = 1
+  </Step>
+</Steps>
+
+### Creating a Supervisor
+
+<Steps>
+  <Step title="Open New User Modal">
+    Click **"Nuevo Usuario"** button
+  </Step>
+  
+  <Step title="Fill Supervisor Details">
+    - Nombre: Full name
+    - Email: Unique email
+    - Contraseña: Initial password
+    - Rol: Select "supervisor" (value: 2)
+  </Step>
+  
+  <Step title="Submit and Inform">
+    After creation, provide the supervisor with their login credentials and guide them to change their password.
+  </Step>
+</Steps>
+
+### Creating an Intern (Practicante)
+
+<Steps>
+  <Step title="Open New User Modal">
+    Click **"Nuevo Usuario"** button
+  </Step>
+  
+  <Step title="Fill Intern Details">
+    - Nombre: Intern's full name
+    - Email: Intern's email address
+    - Contraseña: Temporary password
+    - Rol: Select "practicante" (value: 3)
+  </Step>
+  
+  <Step title="Communicate Credentials">
+    Provide the intern with:
+    - Login URL
+    - Their email address
+    - Temporary password
+    - Instructions to change password on first login
+  </Step>
+</Steps>
+
+<Tip>
+Consider using a standardized temporary password format (e.g., "Welcome2026!") for new accounts, then require password changes on first login.
+</Tip>
+
+## Editing Users
+
+### Accessing Edit Function
+
+Click the **Edit** button (yellow warning button with pencil icon) next to any user in the list.
+
+```html
+<a href='editar_usuario.php?id={$usuario['id']}' 
+   class='btn btn-sm btn-warning'>
+    <i class='fas fa-edit'></i> Editar
+</a>
+```
+
+### Editable Fields
+
+The edit form typically allows modification of:
+- **Nombre**: User's display name
+- **Correo**: Email address (ensure uniqueness)
+- **Password**: New password (optional - leave blank to keep current)
+- **Rol**: Change user's role/permissions
+
+<Accordion title="Changing User Roles">
+  Changing a user's role immediately affects their permissions:
+  
+  - **Practicante → Supervisor**: Grants access to attendance management and user viewing
+  - **Supervisor → Admin**: Grants full system access
+  - **Admin → Practicante**: Removes administrative privileges (use with caution)
+</Accordion>
+
+<Accordion title="Resetting Passwords">
+  To reset a user's password:
+  
+  1. Click Edit on their user row
+  2. Enter a new temporary password
+  3. Save the changes
+  4. Inform the user of their new password securely
+  5. Advise them to change it immediately
+</Accordion>
+
+<Accordion title="Updating Email Addresses">
+  When changing a user's email:
+  
+  - Verify the new email is not already in use (UNIQUE constraint)
+  - Inform the user to use the new email for future logins
+  - Consider sending a confirmation to both old and new addresses
+</Accordion>
+
+## Deleting Users
+
+### Initiating Deletion
+
+Click the **Delete** button (red danger button with trash icon) next to the user you want to remove.
+
+```html
+<a href='eliminar_usuario.php?id={$usuario['id']}' 
+   class='btn btn-sm btn-danger' 
+   onclick='return confirm("¿Estás seguro de eliminar este usuario?")'>
+    <i class='fas fa-trash'></i> Eliminar
+</a>
+```
+
+### Confirmation Dialog
+
+A JavaScript confirmation prompt appears:
+
+**"¿Estás seguro de eliminar este usuario?"**
+
+- Click **OK** to proceed with deletion
+- Click **Cancel** to abort
+
+### Important Considerations
+
+<Warning>
+**Deletion is Permanent**
+
+Deleting a user cannot be undone. Consider these implications:
+
+- User loses all access immediately
+- Associated attendance records may become orphaned
+- Historical data may be affected
+- User cannot log in with deleted credentials
+</Warning>
+
+<Accordion title="Before Deleting Administrators">
+  - Ensure at least one other admin account exists
+  - Never delete the last administrator account
+  - Verify no critical processes depend on this user
+</Accordion>
+
+<Accordion title="Before Deleting Supervisors">
+  - Reassign their supervision responsibilities
+  - Inform affected interns of the change
+  - Review any pending attendance issues they were handling
+</Accordion>
+
+<Accordion title="Before Deleting Interns">
+  - Verify their internship has concluded
+  - Export their attendance records for archives
+  - Consider marking inactive instead of deleting
+</Accordion>
+
+### Alternative to Deletion
+
+<Tip>
+Instead of deleting users, consider adding an `active` status field to the database:
+
+```sql
+ALTER TABLE usuarios ADD COLUMN activo BOOLEAN DEFAULT 1;
+```
+
+Then filter inactive users from login and listings while preserving historical data.
+</Tip>
+
+## Bulk User Operations
+
+### Exporting User Lists
+
+While not implemented in the current UI, you can export user data via SQL:
+
+```sql
+SELECT u.id, u.nombre, u.correo, r.nombre as rol, u.fecha_registro
+FROM usuarios u
+JOIN roles r ON u.rol_id = r.id
+ORDER BY u.fecha_registro DESC
+INTO OUTFILE '/tmp/usuarios.csv'
+FIELDS TERMINATED BY ','
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n';
+```
+
+### Bulk User Creation
+
+For importing multiple users:
+
+<Steps>
+  <Step title="Prepare CSV File">
+    Create a CSV with columns: nombre, correo, password, rol_id
+  </Step>
+  
+  <Step title="Write Import Script">
+    Create a PHP script to process the CSV and insert users:
+    
+    ```php
+    $csv = fopen('usuarios.csv', 'r');
+    while (($row = fgetcsv($csv)) !== FALSE) {
+        $nombre = $row[0];
+        $correo = $row[1];
+        $password = $row[2];
+        $rol_id = $row[3];
+        
+        $password_hash = password_hash($password, PASSWORD_DEFAULT);
+        
+        $stmt = $conn->prepare("INSERT INTO usuarios 
+                                (nombre, correo, password_hash, rol_id) 
+                                VALUES (?, ?, ?, ?)");
+        $stmt->bind_param("sssi", $nombre, $correo, 
+                          $password_hash, $rol_id);
+        $stmt->execute();
+    }
+    ```
+  </Step>
+</Steps>
+
+## User Management Best Practices
+
+<Accordion title="Use Strong Password Policies">
+  When creating users:
+  - Minimum 8 characters
+  - Mix of uppercase, lowercase, numbers, and symbols
+  - No common dictionary words
+  - Force password change on first login
+</Accordion>
+
+<Accordion title="Regular Audits">
+  Periodically review the user list:
+  - Remove accounts for departed interns
+  - Verify role assignments are correct
+  - Check for duplicate or suspicious accounts
+  - Confirm email addresses are current
+</Accordion>
+
+<Accordion title="Document Changes">
+  Maintain a log of user management activities:
+  - Who created/modified/deleted each user
+  - Reason for role changes
+  - Date of each action
+  - Any issues encountered
+</Accordion>
+
+<Accordion title="Email Uniqueness">
+  Always verify email addresses are unique:
+  - Check for typos before creation
+  - Use a consistent format (all lowercase)
+  - Consider a naming convention (firstname.lastname@domain.com)
+</Accordion>
+
+<Accordion title="Supervisor Designation">
+  When creating supervisors:
+  - Clearly communicate their responsibilities
+  - Provide training on the supervisor interface
+  - Set expectations for attendance monitoring
+  - Establish reporting procedures
+</Accordion>
+
+## Troubleshooting Common Issues
+
+### Cannot Create User - Email Already Exists
+
+**Error:** Duplicate entry for key 'correo'
+
+**Solution:** The email address is already in use. Check the user list or try a different email.
+
+```php
+// Check if email exists before creation
+$check = $conn->prepare("SELECT id FROM usuarios WHERE correo = ?");
+$check->bind_param("s", $correo);
+$check->execute();
+if ($check->get_result()->num_rows > 0) {
+    die("Email already exists");
+}
+```
+
+### User Cannot Log In After Creation
+
+Possible causes:
+1. **Incorrect credentials provided**: Verify email and password
+2. **Role assignment error**: Check `rol_id` in database
+3. **Password not hashed**: Ensure password_hash() was called
+4. **Session issues**: Clear browser cookies and try again
+
+### Edit Button Not Working
+
+Check:
+- `editar_usuario.php` file exists in the same directory
+- User ID is being passed correctly in the URL
+- File permissions allow execution
+- No PHP errors in the edit script
+
+### Delete Button Removes Wrong User
+
+This suggests an ID mismatch. Always verify:
+```php
+$id = $_GET['id'];
+// Validate ID is numeric
+if (!is_numeric($id)) {
+    die("Invalid user ID");
+}
+```
+
+## Security Considerations
+
+<Warning>
+**SQL Injection Prevention**
+
+Always use prepared statements for database queries involving user input:
+
+```php
+// CORRECT - Using prepared statements
+$stmt = $conn->prepare("SELECT * FROM usuarios WHERE id = ?");
+$stmt->bind_param("i", $id);
+$stmt->execute();
+
+// WRONG - Direct string interpolation
+$query = "SELECT * FROM usuarios WHERE id = $id";
+$result = $conn->query($query);
+```
+</Warning>
+
+### Access Control
+
+Ensure only administrators can access user management:
+
+```php
+session_start();
+if (!isset($_SESSION['usuario_id']) || $_SESSION['rol_id'] != 1) {
+    header("Location: ../login.php");
+    exit();
+}
+```
+
+### Password Security
+
+- Never store passwords in plain text
+- Use `password_hash()` with PASSWORD_DEFAULT
+- Use `password_verify()` for authentication
+- Consider implementing password strength requirements
+
+### Audit Logging
+
+Consider adding logging for sensitive operations:
+
+```php
+// Log user creation
+error_log("User created: $nombre ($correo) by admin $admin_id");
+
+// Log deletions
+error_log("User deleted: ID $id by admin $admin_id");
+```
+
+## Advanced User Management
+
+### Adding Custom Fields
+
+To extend user profiles:
+
+```sql
+ALTER TABLE usuarios ADD COLUMN telefono VARCHAR(20);
+ALTER TABLE usuarios ADD COLUMN departamento VARCHAR(100);
+ALTER TABLE usuarios ADD COLUMN fecha_nacimiento DATE;
+```
+
+Then update the creation and edit forms to include these fields.
+
+### Role-Based Permissions
+
+Implement granular permissions beyond basic roles:
+
+```sql
+CREATE TABLE permisos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(50) UNIQUE NOT NULL
+);
+
+CREATE TABLE rol_permisos (
+    rol_id INT,
+    permiso_id INT,
+    PRIMARY KEY (rol_id, permiso_id),
+    FOREIGN KEY (rol_id) REFERENCES roles(id),
+    FOREIGN KEY (permiso_id) REFERENCES permisos(id)
+);
+```
+
+### User Activity Tracking
+
+Track user login and activity:
+
+```sql
+CREATE TABLE actividad_usuarios (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    usuario_id INT,
+    accion VARCHAR(100),
+    fecha_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+);
+```

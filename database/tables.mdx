@@ -1,0 +1,468 @@
+---
+title: 'Database Tables'
+description: 'Detailed schema documentation for all database tables'
+---
+
+## Table Definitions
+
+This page provides comprehensive documentation for all tables in the `asistencia_practicantes` database.
+
+---
+
+## practicantes
+
+Stores information about municipal interns (practicantes) enrolled in the attendance tracking system.
+
+### Schema
+
+```sql
+CREATE TABLE practicantes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    correo VARCHAR(100) NOT NULL UNIQUE,
+    fecha_ingreso DATE NOT NULL
+);
+```
+
+### Columns
+
+<ResponseField name="id" type="INT" required>
+  Primary key identifier for the intern. Auto-incremented for each new record.
+</ResponseField>
+
+<ResponseField name="nombre" type="VARCHAR(100)" required>
+  Full name of the intern. Maximum 100 characters to accommodate names with accents and multiple surnames common in Spanish-speaking regions.
+</ResponseField>
+
+<ResponseField name="correo" type="VARCHAR(100)" required>
+  Email address of the intern. Must be unique across all interns. Used for communication and potentially for authentication.
+  
+  **Constraints**: `UNIQUE`, `NOT NULL`
+</ResponseField>
+
+<ResponseField name="fecha_ingreso" type="DATE" required>
+  Date when the intern started their internship. Used to calculate tenure and track internship duration.
+  
+  **Format**: `YYYY-MM-DD`
+</ResponseField>
+
+### Constraints
+
+<AccordionGroup>
+  <Accordion title="Primary Key">
+    - **Column**: `id`
+    - **Type**: Auto-incrementing integer
+    - **Purpose**: Uniquely identifies each intern
+  </Accordion>
+  
+  <Accordion title="Unique Constraints">
+    - **Column**: `correo`
+    - **Purpose**: Ensures no duplicate email addresses
+    - **Use Case**: Prevents multiple accounts for the same person
+  </Accordion>
+  
+  <Accordion title="NOT NULL Constraints">
+    All columns except `id` require values:
+    - `nombre` - Every intern must have a name
+    - `correo` - Email is required for identification
+    - `fecha_ingreso` - Entry date must be recorded
+  </Accordion>
+</AccordionGroup>
+
+### Relationships
+
+- **One-to-Many** with `asistencia`: One intern can have multiple attendance records
+
+### Usage Example
+
+```sql
+-- Insert a new intern
+INSERT INTO practicantes (nombre, correo, fecha_ingreso)
+VALUES ('Juan Pérez García', 'juan.perez@example.com', '2024-01-15');
+
+-- Query all interns
+SELECT id, nombre, correo, fecha_ingreso
+FROM practicantes
+ORDER BY fecha_ingreso DESC;
+
+-- Find intern by email
+SELECT * FROM practicantes
+WHERE correo = 'juan.perez@example.com';
+```
+
+---
+
+## asistencia
+
+Records daily attendance entries for interns, including entry and exit times.
+
+### Schema
+
+```sql
+CREATE TABLE asistencia (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    practicante_id INT NOT NULL,
+    fecha DATE NOT NULL,
+    hora_entrada TIME NOT NULL,
+    hora_salida TIME NULL,
+    FOREIGN KEY (practicante_id) REFERENCES practicantes(id)
+);
+```
+
+### Columns
+
+<ResponseField name="id" type="INT" required>
+  Primary key identifier for the attendance record. Auto-incremented for each new entry.
+</ResponseField>
+
+<ResponseField name="practicante_id" type="INT" required>
+  Foreign key reference to the intern's ID in the `practicantes` table. Links each attendance record to a specific intern.
+  
+  **Foreign Key**: References `practicantes(id)`
+</ResponseField>
+
+<ResponseField name="fecha" type="DATE" required>
+  The date of the attendance record. Combined with `practicante_id`, this tracks which days an intern was present.
+  
+  **Format**: `YYYY-MM-DD`
+</ResponseField>
+
+<ResponseField name="hora_entrada" type="TIME" required>
+  The time when the intern entered/clocked in. Required for every attendance record.
+  
+  **Format**: `HH:MM:SS`
+</ResponseField>
+
+<ResponseField name="hora_salida" type="TIME">
+  The time when the intern exited/clocked out. NULL if the intern is still present or hasn't clocked out yet.
+  
+  **Format**: `HH:MM:SS`  
+  **Nullable**: Yes - allows for active sessions
+</ResponseField>
+
+### Constraints
+
+<AccordionGroup>
+  <Accordion title="Primary Key">
+    - **Column**: `id`
+    - **Type**: Auto-incrementing integer
+    - **Purpose**: Uniquely identifies each attendance record
+  </Accordion>
+  
+  <Accordion title="Foreign Key">
+    - **Column**: `practicante_id`
+    - **References**: `practicantes(id)`
+    - **Purpose**: Ensures attendance records are always linked to valid interns
+    - **Behavior**: Prevents orphaned attendance records
+  </Accordion>
+  
+  <Accordion title="NOT NULL Constraints">
+    Required fields for every attendance record:
+    - `practicante_id` - Must link to a valid intern
+    - `fecha` - Must have a date
+    - `hora_entrada` - Entry time is mandatory
+    
+    Optional fields:
+    - `hora_salida` - NULL for active sessions
+  </Accordion>
+</AccordionGroup>
+
+### Relationships
+
+- **Many-to-One** with `practicantes`: Multiple attendance records belong to one intern
+
+### Usage Examples
+
+```sql
+-- Clock in (entry)
+INSERT INTO asistencia (practicante_id, fecha, hora_entrada)
+VALUES (1, '2024-03-05', '09:00:00');
+
+-- Clock out (exit) - update existing record
+UPDATE asistencia
+SET hora_salida = '17:30:00'
+WHERE id = 1;
+
+-- Get today's attendance with intern names
+SELECT p.nombre, a.hora_entrada, a.hora_salida
+FROM asistencia a
+JOIN practicantes p ON a.practicante_id = p.id
+WHERE a.fecha = CURDATE();
+
+-- Find interns currently present (no exit time)
+SELECT p.nombre, a.hora_entrada
+FROM asistencia a
+JOIN practicantes p ON a.practicante_id = p.id
+WHERE a.fecha = CURDATE() AND a.hora_salida IS NULL;
+```
+
+<Note>
+The `hora_salida` field being NULL indicates an active session, allowing the system to track who is currently present.
+</Note>
+
+---
+
+## roles
+
+Defines the available user roles for the role-based access control (RBAC) system.
+
+### Schema
+
+```sql
+CREATE TABLE roles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(50) UNIQUE NOT NULL
+);
+
+INSERT INTO roles (nombre) VALUES 
+    ('admin'),
+    ('supervisor'),
+    ('practicante');
+```
+
+### Columns
+
+<ResponseField name="id" type="INT" required>
+  Primary key identifier for the role. Auto-incremented and used as foreign key in `usuarios` table.
+</ResponseField>
+
+<ResponseField name="nombre" type="VARCHAR(50)" required>
+  Name of the role. Must be unique across all roles.
+  
+  **Constraints**: `UNIQUE`, `NOT NULL`
+  
+  **Predefined Values**:
+  - `admin` - Full system access
+  - `supervisor` - Can monitor and manage attendance
+  - `practicante` - Limited to own attendance records
+</ResponseField>
+
+### Constraints
+
+<AccordionGroup>
+  <Accordion title="Primary Key">
+    - **Column**: `id`
+    - **Type**: Auto-incrementing integer
+    - **Purpose**: Uniquely identifies each role
+  </Accordion>
+  
+  <Accordion title="Unique Constraints">
+    - **Column**: `nombre`
+    - **Purpose**: Prevents duplicate role names
+    - **Use Case**: Ensures role names are distinct for permission logic
+  </Accordion>
+  
+  <Accordion title="NOT NULL Constraints">
+    - `nombre` - Every role must have a name
+  </Accordion>
+</AccordionGroup>
+
+### Relationships
+
+- **One-to-Many** with `usuarios`: One role can be assigned to multiple users
+
+### Default Data
+
+The table is pre-populated with three standard roles:
+
+| ID | Role Name | Description |
+|----|-----------|-------------|
+| 1 | admin | System administrators with full access |
+| 2 | supervisor | Supervisors who monitor intern attendance |
+| 3 | practicante | Interns with self-service access |
+
+### Usage Examples
+
+```sql
+-- Query all roles
+SELECT id, nombre FROM roles;
+
+-- Add a custom role
+INSERT INTO roles (nombre) VALUES ('manager');
+
+-- Count users by role
+SELECT r.nombre, COUNT(u.id) as total_usuarios
+FROM roles r
+LEFT JOIN usuarios u ON r.id = u.rol_id
+GROUP BY r.id, r.nombre;
+```
+
+<Warning>
+Modifying or deleting default roles may break the application's permission logic. Always check application code before altering roles.
+</Warning>
+
+---
+
+## usuarios
+
+Stores user accounts for system authentication and authorization.
+
+### Schema
+
+```sql
+CREATE TABLE usuarios (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    correo VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    rol_id INT,
+    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (rol_id) REFERENCES roles(id)
+);
+```
+
+### Columns
+
+<ResponseField name="id" type="INT" required>
+  Primary key identifier for the user. Auto-incremented for each new user account.
+</ResponseField>
+
+<ResponseField name="nombre" type="VARCHAR(100)" required>
+  Full name of the user. Used for display purposes throughout the system.
+</ResponseField>
+
+<ResponseField name="correo" type="VARCHAR(100)" required>
+  Email address used for login and communication. Must be unique across all users.
+  
+  **Constraints**: `UNIQUE`, `NOT NULL`
+  **Use Case**: Primary login identifier
+</ResponseField>
+
+<ResponseField name="password_hash" type="VARCHAR(255)" required>
+  Hashed password for authentication. Never stores passwords in plain text.
+  
+  **Length**: 255 characters to accommodate bcrypt, Argon2, or other modern hashing algorithms
+  **Security**: Should be generated using secure hashing functions
+</ResponseField>
+
+<ResponseField name="rol_id" type="INT">
+  Foreign key reference to the user's role in the `roles` table. Determines user permissions.
+  
+  **Foreign Key**: References `roles(id)`  
+  **Nullable**: Yes - allows user creation before role assignment
+</ResponseField>
+
+<ResponseField name="fecha_registro" type="TIMESTAMP">
+  Timestamp of when the user account was created. Automatically set to current timestamp on insert.
+  
+  **Default**: `CURRENT_TIMESTAMP`  
+  **Format**: `YYYY-MM-DD HH:MM:SS`
+</ResponseField>
+
+### Constraints
+
+<AccordionGroup>
+  <Accordion title="Primary Key">
+    - **Column**: `id`
+    - **Type**: Auto-incrementing integer
+    - **Purpose**: Uniquely identifies each user
+  </Accordion>
+  
+  <Accordion title="Foreign Key">
+    - **Column**: `rol_id`
+    - **References**: `roles(id)`
+    - **Purpose**: Links users to their assigned roles
+    - **Nullable**: Yes - allows pending role assignment
+  </Accordion>
+  
+  <Accordion title="Unique Constraints">
+    - **Column**: `correo`
+    - **Purpose**: Ensures each email is used by only one account
+    - **Use Case**: Prevents duplicate accounts and ensures unique login identifiers
+  </Accordion>
+  
+  <Accordion title="NOT NULL Constraints">
+    Required fields:
+    - `nombre` - User must have a name
+    - `correo` - Email required for login
+    - `password_hash` - Password required for authentication
+    
+    Optional fields:
+    - `rol_id` - Can be NULL during user creation
+    - `fecha_registro` - Auto-generated, not NULL by default
+  </Accordion>
+</AccordionGroup>
+
+### Relationships
+
+- **Many-to-One** with `roles`: Multiple users can have the same role
+
+### Usage Examples
+
+```sql
+-- Create new user with role
+INSERT INTO usuarios (nombre, correo, password_hash, rol_id)
+VALUES (
+    'María González',
+    'maria.gonzalez@example.com',
+    '$2y$10$abcdefghijklmnopqrstuv',  -- hashed password
+    2  -- supervisor role
+);
+
+-- Query users with their roles
+SELECT u.id, u.nombre, u.correo, r.nombre as rol, u.fecha_registro
+FROM usuarios u
+LEFT JOIN roles r ON u.rol_id = r.id
+ORDER BY u.fecha_registro DESC;
+
+-- Authenticate user (verify email exists)
+SELECT id, nombre, password_hash, rol_id
+FROM usuarios
+WHERE correo = 'maria.gonzalez@example.com';
+
+-- Get all admin users
+SELECT u.nombre, u.correo
+FROM usuarios u
+JOIN roles r ON u.rol_id = r.id
+WHERE r.nombre = 'admin';
+```
+
+<Warning>
+**Security Best Practices**:
+- Always hash passwords using bcrypt, Argon2, or similar algorithms
+- Never store plain text passwords
+- Use prepared statements to prevent SQL injection
+- Implement password complexity requirements at the application level
+</Warning>
+
+### Auto-Generated Fields
+
+<Note>
+The `fecha_registro` field is automatically populated with the current timestamp when a user is created. You don't need to provide this value during INSERT operations.
+</Note>
+
+---
+
+## Summary
+
+The database consists of four interconnected tables:
+
+<CardGroup cols={2}>
+  <Card title="practicantes" icon="users">
+    **4 columns** | Stores intern profiles and entry dates
+  </Card>
+  
+  <Card title="asistencia" icon="clock">
+    **5 columns** | Tracks daily entry and exit times
+  </Card>
+  
+  <Card title="roles" icon="shield">
+    **2 columns** | Defines user roles and permissions
+  </Card>
+  
+  <Card title="usuarios" icon="user-lock">
+    **6 columns** | Manages user authentication and access
+  </Card>
+</CardGroup>
+
+### Total Schema Statistics
+
+- **Tables**: 4
+- **Foreign Keys**: 2
+- **Unique Constraints**: 3
+- **Auto-Increment Fields**: 4
+- **Default Values**: 1 (CURRENT_TIMESTAMP)
+
+<Card title="View Relationships" icon="diagram-project" href="./relationships">
+  Explore how these tables connect through foreign keys and joins
+</Card>

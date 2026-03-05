@@ -1,0 +1,308 @@
+---
+title: User Roles
+description: Understanding the three-tier role system in Asistencias
+icon: users
+---
+
+## Overview
+
+Asistencias implements a hierarchical role-based access control (RBAC) system with three distinct user roles, each with specific permissions and access levels. The roles are stored in the `roles` table and linked to users through the `usuarios` table.
+
+## Role Types
+
+The system defines three primary roles with numeric identifiers:
+
+<CardGroup cols={3}>
+  <Card title="Admin" icon="shield-halved" color="#4CAF50">
+    Full system access with user management capabilities
+  </Card>
+  <Card title="Supervisor" icon="user-tie" color="#2196F3">
+    Monitor attendance and view reports
+  </Card>
+  <Card title="Practicante" icon="user-graduate" color="#FF9800">
+    Track personal attendance and view own records
+  </Card>
+</CardGroup>
+
+## Database Schema
+
+The role system is implemented through two main tables:
+
+### Roles Table
+
+```sql
+CREATE TABLE roles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(50) UNIQUE NOT NULL
+);
+
+INSERT INTO roles (nombre) VALUES 
+    ('admin'),
+    ('supervisor'),
+    ('practicante');
+```
+
+### Users Table Relationship
+
+```sql
+CREATE TABLE usuarios (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    correo VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    rol_id INT,
+    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (rol_id) REFERENCES roles(id)
+);
+```
+
+## Role Permissions
+
+<Tabs>
+  <Tab title="Admin (rol_id = 1)">
+    ### Full System Access
+
+    Administrators have complete control over the system:
+
+    **User Management**
+    - Create, edit, and delete users
+    - Assign roles to users
+    - View all user profiles
+
+    **Attendance Management**
+    - View all attendance records
+    - Export attendance data to Excel
+    - Monitor attendance status (complete/incomplete)
+
+    **Dashboard Features**
+    - Total users count
+    - Total practicantes count
+    - Daily attendance statistics
+    - Access to all system modules
+
+    **Navigation Access**
+    ```php
+    // admin_dashboard.php sidebar menu
+    - Panel de Administración
+    - Gestión de Usuarios
+    - Practicantes
+    - Perfil
+    - Asistencias
+    - Cerrar Sesión
+    ```
+
+    <Note>
+      Admin access is verified in PHP files:
+      ```php
+      if (!isset($_SESSION['usuario_id']) || $_SESSION['rol_id'] != 1) {
+          header("Location: ../login.php");
+          exit();
+      }
+      ```
+    </Note>
+  </Tab>
+
+  <Tab title="Supervisor (rol_id = 2)">
+    ### Monitoring & Reporting
+
+    Supervisors can monitor attendance but cannot manage users:
+
+    **Read-Only User Access**
+    - View practicante information
+    - Access user lists
+
+    **Attendance Monitoring**
+    - View all attendance records
+    - Check daily attendance statistics
+    - Monitor practicante attendance patterns
+
+    **Dashboard Features**
+    - Total practicantes count
+    - Daily attendance records count
+
+    **Navigation Access**
+    ```php
+    // supervisor_dashboard.php sidebar menu
+    - Panel de Supervisor
+    - Gestión de Usuarios (view-only)
+    - Asistencias (view)
+    - Cerrar Sesión
+    ```
+
+    <Note>
+      Supervisor access check allows both admin and supervisor roles:
+      ```php
+      if (!isset($_SESSION['usuario_id']) || !in_array($_SESSION['rol_id'], [1, 2])) {
+          header("Location: ../login.php");
+          exit();
+      }
+      ```
+    </Note>
+  </Tab>
+
+  <Tab title="Practicante (rol_id = 3)">
+    ### Self-Service Attendance
+
+    Practicantes can only manage their own attendance:
+
+    **Attendance Actions**
+    - Mark entrada (entry time)
+    - Mark salida (exit time)
+    - View personal attendance history
+
+    **Limitations**
+    - Cannot view other users' data
+    - Cannot access admin or supervisor features
+    - Cannot modify past attendance records
+
+    **Dashboard Features**
+    - Personal attendance table with:
+      - Fecha (date)
+      - Hora Entrada (entry time)
+      - Hora Salida (exit time)
+    - Daily check-in/check-out buttons
+
+    **Navigation Access**
+    ```php
+    // practicante_dashboard.php sidebar menu
+    - Inicio
+    - Perfil
+    - Cerrar Sesión
+    ```
+
+    <Warning>
+      Practicantes can only mark attendance once per day. The system checks for existing records:
+      ```php
+      $query = "SELECT * FROM asistencia WHERE usuario_id = '$usuario_id' AND fecha = DATE(NOW())";
+      ```
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Role Assignment
+
+Roles are assigned during user registration or creation:
+
+### During Registration
+
+```php
+// registra_sesion.php
+<select name="rol" class="form-control" required>
+    <option value="">Seleccione un rol</option>
+    <option value="1">Admin</option>
+    <option value="2">Supervisor</option>
+    <option value="3">Practicante</option>
+</select>
+```
+
+### Admin User Creation
+
+```php
+// admin/usuarios.php - Modal form
+<select name="rol_id" class="form-control" required>
+    <?php
+    $roles = $conn->query("SELECT * FROM roles");
+    while ($rol = $roles->fetch_assoc()) {
+        echo "<option value='{$rol['id']}'>{$rol['nombre']}</option>";
+    }
+    ?>
+</select>
+```
+
+## Access Control Flow
+
+<Accordion title="Role-Based Routing">
+  The authentication system automatically routes users based on their role after successful login:
+
+  ```php
+  // login.php
+  switch ($usuario['rol_id']) {
+      case 1: // Admin
+          header("Location: dasboards/admin_dashboard.php");
+          break;
+      case 2: // Supervisor
+          header("Location: dasboards/supervisor_dashboard.php");
+          break;
+      case 3: // Practicante
+          header("Location: dasboards/practicante_dashboard.php");
+  }
+  ```
+</Accordion>
+
+<Accordion title="Session-Based Verification">
+  Each protected page verifies the user's role stored in the session:
+
+  ```php
+  session_start();
+  
+  // Admin-only check
+  if (!isset($_SESSION['usuario_id']) || $_SESSION['rol_id'] != 1) {
+      header("Location: ../login.php");
+      exit();
+  }
+  ```
+</Accordion>
+
+## Role Query Examples
+
+### Fetch User with Role
+
+```php
+// Get user details with role name
+$stmt = $conn->prepare(
+    "SELECT u.*, r.nombre as rol_nombre 
+     FROM usuarios u 
+     JOIN roles r ON u.rol_id = r.id 
+     WHERE u.id = ?"
+);
+$stmt->bind_param("i", $usuario_id);
+$stmt->execute();
+$result = $stmt->get_result();
+$usuario = $result->fetch_assoc();
+```
+
+### Filter by Role
+
+```php
+// Count practicantes only
+$result = $conn->query(
+    "SELECT COUNT(*) as total FROM usuarios WHERE rol_id = 3"
+);
+$row = $result->fetch_assoc();
+echo $row['total'] . " Practicantes";
+```
+
+## Security Considerations
+
+<Warning>
+  **Important Security Notes:**
+  
+  - Role IDs are hardcoded (1=admin, 2=supervisor, 3=practicante)
+  - Each protected page must verify both authentication and authorization
+  - Session data includes: `usuario_id`, `nombre`, and `rol_id`
+  - Unauthorized access attempts redirect to login page
+</Warning>
+
+## Best Practices
+
+1. **Always check both authentication and role**
+   ```php
+   if (!isset($_SESSION['usuario_id']) || $_SESSION['rol_id'] != 1) {
+       header("Location: ../login.php");
+       exit();
+   }
+   ```
+
+2. **Use prepared statements** when querying role-based data
+   ```php
+   $stmt = $conn->prepare("SELECT * FROM usuarios WHERE rol_id = ?");
+   $stmt->bind_param("i", $rol_id);
+   ```
+
+3. **Validate role changes** through admin interface only
+
+4. **Log role-based access** for security auditing
+   ```php
+   error_log("Intento de acceso no autorizado. User ID: " . 
+             ($_SESSION['usuario_id'] ?? 'Not set'));
+   ```
